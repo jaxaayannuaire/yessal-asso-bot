@@ -54,6 +54,31 @@ class DatabaseManager:
                     date_payment VARCHAR, type VARCHAR, last_sync TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            # 3. Table de cache pour les adhésions (memberships)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS cache_memberships (
+                    id VARCHAR PRIMARY KEY,
+                    member_id VARCHAR,
+                    date_subscription DATE,
+                    date_start DATE,
+                    date_end DATE,
+                    amount DOUBLE,
+                    last_sync TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # 4. Table de cache pour les cotisations / paiements (contributions)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS cache_contributions (
+                    id VARCHAR PRIMARY KEY,
+                    member_id VARCHAR,
+                    date_c DATE,
+                    amount DOUBLE,
+                    note VARCHAR,
+                    last_sync TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
             return True, "✅ Base de données initialisée."
         except Exception as e:
             logger.error(f"Erreur DuckDB : {e}")
@@ -150,7 +175,72 @@ class DatabaseManager:
             return True, stats
         except Exception as e:
             return False, {}
+            
+    def sync_memberships(self, memberships_data):
+        """Synchronise les adhésions dans DuckDB"""
+        conn = self.connect()
+        try:
+            conn.execute("DELETE FROM cache_memberships")
+            for m in memberships_data:
+                m_id = str(m.get('id', ''))
+                member_id = str(m.get('fk_member', ''))
+                date_sub = str(m.get('date_creation', ''))
+                date_start = str(m.get('date_start', ''))
+                date_end = str(m.get('date_end', ''))
+                amount = float(m.get('amount', 0.0))
 
+                conn.execute("""
+                    INSERT INTO cache_memberships (id, member_id, date_subscription, date_start, date_end, amount)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, [m_id, member_id, date_sub, date_start, date_end, amount])
+                
+            return True, f"✅ {len(memberships_data)} adhésions synchronisées en local."
+        except Exception as e:
+            logger.error(f"Erreur sync_memberships : {e}")
+            return False, f"❌ Erreur synchro adhésions : {e}"
+
+    def sync_contributions(self, contributions_data):
+        """Synchronise les cotisations dans DuckDB"""
+        conn = self.connect()
+        try:
+            conn.execute("DELETE FROM cache_contributions")
+            for c in contributions_data:
+                c_id = str(c.get('id', ''))
+                member_id = str(c.get('fk_member', ''))
+                date_c = str(c.get('datep', ''))
+                amount = float(c.get('amount', 0.0))
+                note = str(c.get('note', ''))
+
+                conn.execute("""
+                    INSERT INTO cache_contributions (id, member_id, date_c, amount, note)
+                    VALUES (?, ?, ?, ?, ?)
+                """, [c_id, member_id, date_c, amount, note])
+                
+            return True, f"✅ {len(contributions_data)} cotisations synchronisées en local."
+        except Exception as e:
+            logger.error(f"Erreur sync_contributions : {e}")
+            return False, f"❌ Erreur synchro cotisations : {e}"
+            
+    def get_dashboard_stats(self):
+        """Récupère les statistiques globales pour le dashboard"""
+        conn = self.connect()
+        try:
+            stats = {}
+            res = conn.execute("SELECT COUNT(*) FROM cache_contacts").fetchone()
+            stats['total_contacts'] = res[0] if res else 0
+            
+            res = conn.execute("SELECT COUNT(*), SUM(CASE WHEN status='1' THEN 1 ELSE 0 END) FROM cache_members").fetchone()
+            stats['total_members'] = res[0] if res else 0
+            stats['active_members'] = int(res[1]) if res and res[1] else 0
+            
+            res = conn.execute("SELECT SUM(amount) FROM cache_contributions").fetchone()
+            stats['total_contributions'] = float(res[0]) if res and res[0] else 0.0
+            
+            return True, stats
+        except Exception as e:
+            logger.error(f"Erreur get_dashboard_stats : {e}")
+            return False, {}
+            
     def close(self):
         if self.conn:
             self.conn.close()

@@ -82,3 +82,34 @@ class DolibarrClient:
             except Exception:
                 continue
         return True, all_data
+
+    def get_memberships(self, limit=100):
+        """Récupère la liste des adhésions depuis Dolibarr"""
+        try:
+            url = f"{self.api_url}/subscriptions?limit={limit}&sortfield=t.rowid&sortorder=DESC"
+            response = requests.get(url, headers=self.headers, timeout=10)
+            if response.status_code == 200:
+                return True, response.json()
+            elif response.status_code in [404, 501]:
+                url_alt = f"{self.api_url}/index.php/subscriptions?limit={limit}&sortfield=t.rowid&sortorder=DESC"
+                response_alt = requests.get(url_alt, headers=self.headers, timeout=10)
+                if response_alt.status_code == 200:
+                    return True, response_alt.json()
+            return False, f"Erreur HTTP {response.status_code}"
+        except Exception as e:
+            logger.error(f"Erreur get_memberships : {e}")
+            return False, str(e)
+
+    def get_contributions(self, limit=100):
+        """Récupère la liste des cotisations (paiements membres) depuis Dolibarr"""
+        try:
+            # Note: selon la version de Dolibarr, l'endpoint des cotisations de membres est souvent /stages ou /subscriptions/payments ou géré via les paiements factures.
+            # On utilise ici l'endpoint standard des cotisations d'adhérents s'il existe, ou des paiements.
+            url = f"{self.api_url}/subscriptions?limit={limit}" # (Adaptable selon les modules actifs)
+            response = requests.get(url, headers=self.headers, timeout=10)
+            if response.status_code == 200:
+                return True, response.json()
+            return False, f"Erreur HTTP {response.status_code}"
+        except Exception as e:
+            logger.error(f"Erreur get_contributions : {e}")
+            return False, str(e)
