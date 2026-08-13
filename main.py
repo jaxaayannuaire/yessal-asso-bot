@@ -12,6 +12,7 @@ from modules.contributions import sync_contributions_command
 from modules.dashboard import dashboard_command, button_callback
 from modules.jobs import background_sync_job
 from modules.report import weekly_report_command
+from modules.jobs import background_sync_job, scheduled_weekly_report
 
 load_dotenv()
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -58,9 +59,13 @@ if __name__ == '__main__':
     # Configuration de la JobQueue pour les tâches en arrière-plan
     job_queue = app.job_queue
     if job_queue:
+        # Sync toutes les 6 heures
         job_queue.run_repeating(background_sync_job, interval=21600, first=10)
-        logger.info("⏰ JobQueue configurée : Synchronisation automatique active.")
-    else:
-        logger.warning("⚠️ JobQueue non disponible. Les tâches planifiées sont désactivées.")
+        
+        # Rapport hebdomadaire (par exemple toutes les semaines : interval = 604800 secondes)
+        # Ou premier lancement après 30 secondes pour tester
+        job_queue.run_repeating(scheduled_weekly_report, interval=604800, first=30)
+        
+        logger.info("⏰ JobQueue configurée : Sync et rapports automatiques actifs.")
     
     app.run_polling()
