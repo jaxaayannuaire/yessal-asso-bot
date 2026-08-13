@@ -1,25 +1,22 @@
 from telegram import Update
 from telegram.ext import ContextTypes
-import logging
 from services.dolibarr_api import DolibarrClient
 from core.db import DatabaseManager
 from core.auth import AuthManager
-
-logger = logging.getLogger(__name__)
 
 async def sync_memberships_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = AuthManager()
     user = auth.get_user(str(update.effective_user.id))
     if not user or user[2] not in ['super_admin', 'president', 'tresorier']:
-        await update.message.reply_text("⛔ Vous n'avez pas l'autorisation.")
+        await update.message.reply_text("⛔ Accès refusé.")
         return
-    await update.message.reply_text("⏳ Téléchargement des adhésions depuis Dolibarr...")
+    await update.message.reply_text("⏳ Téléchargement des adhésions...")
     client = DolibarrClient()
     success, data = client.get_memberships()
     if success:
         db = DatabaseManager()
-        sync_success, message = db.sync_memberships(data)
+        _, msg = db.sync_memberships(data)
         db.close()
-        await update.message.reply_text(message)
+        await update.message.reply_text(msg)
     else:
-        await update.message.reply_text(f"❌ Erreur lors de la lecture des adhésions : {data}")
+        await update.message.reply_text(f"❌ Erreur : {data}")
