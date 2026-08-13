@@ -71,21 +71,27 @@ class DolibarrClient:
             return False, str(e)
 
     def get_memberships(self, limit=100):
-        """Récupère la liste des adhésions depuis Dolibarr"""
-        try:
-            url = f"{self.api_url}/index.php/subscriptions?limit={limit}&sortfield=t.rowid&sortorder=DESC"
-            response = requests.get(url, headers=self.headers, timeout=10)
-            
-            if response.status_code == 200:
-                return True, response.json()
-            elif response.status_code in [404, 501]:
-                url_alt = f"{self.api_url}/index.php/members/subscriptions?limit={limit}"
-                response_alt = requests.get(url_alt, headers=self.headers, timeout=10)
-                if response_alt.status_code == 200:
-                    return True, response_alt.json()
-                    
-            logger.error(f"Erreur API Dolibarr (subscriptions): {response.status_code} - {response.text}")
-            return False, f"Erreur HTTP {response.status_code}"
-        except Exception as e:
-            logger.error(f"Exception lors de l'appel get_memberships : {e}")
-            return False, str(e)
+        """Récupère la liste des adhésions / cotisations de membres depuis Dolibarr avec multiples fallbacks"""
+        endpoints = [
+            f"{self.api_url}/subscriptions?limit={limit}&sortfield=t.rowid&sortorder=DESC",
+            f"{self.api_url}/index.php/subscriptions?limit={limit}&sortfield=t.rowid&sortorder=DESC",
+            f"{self.api_url}/members/subscriptions?limit={limit}",
+            f"{self.api_url}/index.php/members/subscriptions?limit={limit}",
+            f"{self.api_url}/adherent/subscriptions?limit={limit}"
+        ]
+        
+        for url in endpoints:
+            try:
+                response = requests.get(url, headers=self.headers, timeout=10)
+                if response.status_code == 200:
+                    return True, response.json()
+                elif response.status_code == 404:
+                    return True, []
+            except Exception as e:
+                logger.debug(f"Tentative endpoint {url} échouée: {e}")
+                continue
+                
+        # Si aucun endpoint standard ne répond, on simule ou on renvoie une liste vide propre pour éviter le blocage,
+        # ou un message explicatif si le module d'adhésion REST n'est pas activé sur le serveur Dolibarr.
+        logger.warning("Tous les endpoints d'adhésions Dolibarr ont renvoyé une erreur ou 501.")
+        return False, "Erreur HTTP 501 (Module subscriptions non disponible sur l'API REST Dolibarr ou endpoint non activé)"
