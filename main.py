@@ -55,9 +55,10 @@ if __name__ == '__main__':
     
     # Configuration de la JobQueue pour les tâches en arrière-plan
     job_queue = app.job_queue
-    
-    # Par exemple : Exécuter le job 10 secondes après le démarrage, puis toutes les 6 heures (21600 secondes)
-    job_queue.run_repeating(background_sync_job, interval=21600, first=10)
-    logger.info("⏰ JobQueue configurée : Synchronisation automatique active.")
+    if job_queue:
+        job_queue.run_repeating(background_sync_job, interval=21600, first=10)
+        logger.info("⏰ JobQueue configurée : Synchronisation automatique active.")
+    else:
+        logger.warning("⚠️ JobQueue non disponible. Les tâches planifiées sont désactivées.")
     
     app.run_polling()
