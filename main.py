@@ -1,47 +1,53 @@
-import os
 import logging
+import os
+
 from dotenv import load_dotenv
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler
+from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler
 
 from core.db import DatabaseManager
 from services.dolibarr_api import DolibarrClient
-from modules.contacts import sync_contacts_command, search_contact_command
-from modules.members import sync_members_command, search_member_command
+from modules.contacts import search_contact_command, sync_contacts_command
+from modules.members import search_member_command, sync_members_command
 from modules.memberships import sync_memberships_command
 from modules.contributions import sync_contributions_command
-from modules.dashboard import dashboard_command, button_callback
-from modules.jobs import background_sync_job
-from modules.report import weekly_report_command
+from modules.dashboard import button_callback, dashboard_command
 from modules.jobs import background_sync_job, scheduled_weekly_report
-from modules.jobs import test_alert_command # ou importe-la depuis le bon fichier
+from modules.report import test_alert_command, weekly_report_command
 
 load_dotenv()
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO),
+)
 logger = logging.getLogger(__name__)
 
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN') or os.getenv('TELEGRAM_BOT_TOKEN')
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
+
 
 async def start(update, context):
     await update.message.reply_text("👋 Bienvenue sur Yessal Asso Bot !")
 
+
 async def init_db_command(update, context):
     db = DatabaseManager()
-    _, msg = db.init_db()
-    db.close()
+    try:
+        _, msg = db.init_db()
+    finally:
+        db.close()
     await update.message.reply_text(msg)
+
 
 async def ping_dolibarr_command(update, context):
     client = DolibarrClient()
     _, msg = client.ping()
     await update.message.reply_text(msg)
 
-if __name__ == '__main__':
+
+def build_application():
     if not TELEGRAM_TOKEN:
-        print("Erreur token")
-        exit(1)
+        raise RuntimeError("TELEGRAM_TOKEN / TELEGRAM_BOT_TOKEN manquant dans .env")
 
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("init_db", init_db_command))
     app.add_handler(CommandHandler("ping_dolibarr", ping_dolibarr_command))
@@ -56,18 +62,16 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("report", weekly_report_command))
     app.add_handler(CommandHandler("test_alert", test_alert_command))
 
-    print("Yessal Asso Bot démarré...")
-    
-    # Configuration de la JobQueue pour les tâches en arrière-plan
-    job_queue = app.job_queue
-    if job_queue:
-        # Sync toutes les 6 heures
-        job_queue.run_repeating(background_sync_job, interval=21600, first=10)
-        
-        # Rapport hebdomadaire (par exemple toutes les semaines : interval = 604800 secondes)
-        # Ou premier lancement après 30 secondes pour tester
-        job_queue.run_repeating(scheduled_weekly_report, interval=604800, first=30)
-        
-        logger.info("⏰ JobQueue configurée : Sync et rapports automatiques actifs.")
-    
-    app.run_polling()
+    if app.job_queue:
+        app.job_queue.run_repeating(background_sync_job, interval=21600, first=10)
+        app.job_queue.run_repeating(scheduled_weekly_report, interval=604800, first=30)
+        logger.info("JobQueue configurée : sync et rapport hebdomadaire actifs.")
+    else:
+        logger.warning("JobQueue indisponible : jobs automatiques désactivés.")
+
+    return app
+
+
+if __name__ == "__main__":
+    logger.info("Yessal Asso Bot démarré...")
+    build_application().run_polling()

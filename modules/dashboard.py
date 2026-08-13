@@ -1,13 +1,13 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from core.db import DatabaseManager
-from core.auth import AuthManager
+from core.auth import AuthManager, BOARD_ROLES
 
 async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     auth = AuthManager()
     user = auth.get_user(user_id)
-    if not user or user[2] not in ['super_admin', 'president', 'tresorier']:
+    if not user or user[2] not in BOARD_ROLES:
         await update.message.reply_text("⛔ Accès refusé au Dashboard.")
         return
 

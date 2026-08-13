@@ -3,7 +3,7 @@ from telegram.ext import ContextTypes
 import logging
 
 from core.db import DatabaseManager
-from core.auth import AuthManager
+from core.auth import AuthManager, BOARD_ROLES
 from modules.jobs import scheduled_weekly_report
 
 logger = logging.getLogger(__name__)
@@ -15,7 +15,7 @@ async def weekly_report_command(update: Update, context: ContextTypes.DEFAULT_TY
     user = auth.get_user(user_id)
     
     # Seuls les admins, présidents et trésoriers peuvent consulter le rapport stratégique
-    if not user or user[2] not in ['super_admin', 'president', 'tresorier']:
+    if not user or user[2] not in BOARD_ROLES:
         await update.message.reply_text("⛔ Accès réservé au Bureau de l'association.")
         return
 
@@ -48,7 +48,7 @@ async def test_alert_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user = auth.get_user(user_id)
     
     # Vérification des rôles (Admin / Bureau uniquement)
-    if not user or user[2] not in ['super_admin', 'president', 'tresorier']:
+    if not user or user[2] not in BOARD_ROLES:
         await update.message.reply_text("⛔ Accès réservé aux administrateurs.")
         return
 
