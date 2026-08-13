@@ -10,6 +10,7 @@ from modules.members import sync_members_command, search_member_command
 from modules.memberships import sync_memberships_command
 from modules.contributions import sync_contributions_command
 from modules.dashboard import dashboard_command, button_callback
+from modules.jobs import background_sync_job
 
 load_dotenv()
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -51,4 +52,12 @@ if __name__ == '__main__':
     app.add_handler(CallbackQueryHandler(button_callback))
 
     print("Yessal Asso Bot démarré...")
+    
+    # Configuration de la JobQueue pour les tâches en arrière-plan
+    job_queue = app.job_queue
+    
+    # Par exemple : Exécuter le job 10 secondes après le démarrage, puis toutes les 6 heures (21600 secondes)
+    job_queue.run_repeating(background_sync_job, interval=21600, first=10)
+    logger.info("⏰ JobQueue configurée : Synchronisation automatique active.")
+    
     app.run_polling()
