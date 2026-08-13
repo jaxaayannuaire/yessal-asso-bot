@@ -240,7 +240,31 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Erreur get_dashboard_stats : {e}")
             return False, {}
-            
+    
+    def get_weekly_report_data(self):
+        """Récupère les données consolidées pour le rapport hebdomadaire"""
+        conn = self.connect()
+        try:
+            # 1. Total cotisations et nombre de paiements
+            res_cot = conn.execute("SELECT COUNT(*), SUM(amount) FROM cache_contributions").fetchone()
+            total_cotisations_count = res_cot[0] if res_cot else 0
+            total_cotisations_amount = float(res_cot[1]) if res_cot and res_cot[1] else 0.0
+
+            # 2. Total membres et membres actifs
+            res_mem = conn.execute("SELECT COUNT(*), SUM(CASE WHEN status='1' THEN 1 ELSE 0 END) FROM cache_members").fetchone()
+            total_members = res_mem[0] if res_mem else 0
+            active_members = int(res_mem[1]) if res_mem and res_mem[1] else 0
+
+            return True, {
+                "total_cotisations_count": total_cotisations_count,
+                "total_cotisations_amount": total_cotisations_amount,
+                "total_members": total_members,
+                "active_members": active_members
+            }
+        except Exception as e:
+            logger.error(f"Erreur get_weekly_report_data : {e}")
+            return False, {}
+    
     def close(self):
         if self.conn:
             self.conn.close()
