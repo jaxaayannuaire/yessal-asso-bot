@@ -4,6 +4,7 @@ import logging
 
 from core.db import DatabaseManager
 from core.auth import AuthManager
+from modules.jobs import scheduled_weekly_report
 
 logger = logging.getLogger(__name__)
 
@@ -39,3 +40,24 @@ async def weekly_report_command(update: Update, context: ContextTypes.DEFAULT_TY
 _Généré automatiquement depuis le cache local DuckDB._
 """
     await update.message.reply_text(report_text, parse_mode='Markdown')
+    
+async def test_alert_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Commande /test_alert : Déclenche manuellement l'alerte/rapport hebdomadaire"""
+    user_id = str(update.effective_user.id)
+    auth = AuthManager()
+    user = auth.get_user(user_id)
+    
+    # Vérification des rôles (Admin / Bureau uniquement)
+    if not user or user[2] not in ['super_admin', 'president', 'tresorier']:
+        await update.message.reply_text("⛔ Accès réservé aux administrateurs.")
+        return
+
+    await update.message.reply_text("🚀 Déclenchement manuel de l'alerte en cours...")
+    
+    # Réutilise la fonction de rapport planifié en lui passant le contexte actuel
+    try:
+        await scheduled_weekly_report(context)
+        await update.message.reply_text("✅ Alerte déclenchée et envoyée avec succès !")
+    except Exception as e:
+        logger.error(f"Erreur lors du test manuel de l'alerte : {e}")
+        await update.message.reply_text(f"❌ Erreur : {e}")

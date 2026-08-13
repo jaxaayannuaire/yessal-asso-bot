@@ -13,6 +13,7 @@ from modules.dashboard import dashboard_command, button_callback
 from modules.jobs import background_sync_job
 from modules.report import weekly_report_command
 from modules.jobs import background_sync_job, scheduled_weekly_report
+from modules.jobs import test_alert_command # ou importe-la depuis le bon fichier
 
 load_dotenv()
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -53,6 +54,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("dashboard", dashboard_command))
     app.add_handler(CallbackQueryHandler(button_callback))
     app.add_handler(CommandHandler("report", weekly_report_command))
+    app.add_handler(CommandHandler("test_alert", test_alert_command))
 
     print("Yessal Asso Bot démarré...")
     
