@@ -13,6 +13,7 @@ from modules.contributions import sync_contributions_command
 from modules.dashboard import button_callback, dashboard_command
 from modules.jobs import background_sync_job, scheduled_weekly_report
 from modules.report import test_alert_command, weekly_report_command
+from modules.cash import caisse_command, cash_callback, entree_command, sortie_command
 
 load_dotenv()
 logging.basicConfig(
@@ -58,7 +59,11 @@ def build_application():
     app.add_handler(CommandHandler("sync_memberships", sync_memberships_command))
     app.add_handler(CommandHandler("sync_contributions", sync_contributions_command))
     app.add_handler(CommandHandler("dashboard", dashboard_command))
-    app.add_handler(CallbackQueryHandler(button_callback))
+    app.add_handler(CommandHandler("caisse", caisse_command))
+    app.add_handler(CommandHandler("entree", entree_command))
+    app.add_handler(CommandHandler("sortie", sortie_command))
+    app.add_handler(CallbackQueryHandler(button_callback, pattern=r"^action_"))
+    app.add_handler(CallbackQueryHandler(cash_callback, pattern=r"^cash_"))
     app.add_handler(CommandHandler("report", weekly_report_command))
     app.add_handler(CommandHandler("test_alert", test_alert_command))
 

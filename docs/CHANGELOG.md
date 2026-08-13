@@ -1,18 +1,11 @@
-# Changelog — Yessal Asso Bot
+# Changelog
 
-## Phase 16.5 — Consolidation technique
+## Phase 17 — Caisse & Trésorerie
 
-### Améliorations
-
-- Nettoyage de `main.py` et centralisation de la construction de l'application.
-- Centralisation des rôles et contrôles d'accès dans `core/auth.py`.
-- Nettoyage de `core/db.py` : suppression des méthodes dupliquées et transactions de synchronisation.
-- Migration DuckDB additive pour les installations ayant un ancien schéma.
-- Nettoyage du client REST Dolibarr et gestion homogène des erreurs réseau/JSON.
-- Journalisation plus exploitable des jobs et erreurs.
-- Ajout d'un `.gitignore` adapté au bot.
-- Ajout de documentation technique et de déploiement.
-
-### Compatibilité
-
-Aucune migration destructive n'est prévue par cette phase. Les colonnes historiques DuckDB sont conservées lorsqu'elles existent.
+- Ajout du module `modules/cash.py`.
+- Ajout de `/caisse`, `/entree` et `/sortie`.
+- Ajout du workflow de confirmation Telegram.
+- Ajout de la validation Président/Super Admin pour les dépenses du trésorier au-dessus du seuil configuré.
+- Ajout de l'idempotence et de l'audit local des opérations financières.
+- Ajout des appels Dolibarr `bankaccounts`, `balance` et `lines`.
+- Ajout des tests DuckDB du workflow technique.

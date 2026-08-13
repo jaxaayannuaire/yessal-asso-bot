@@ -120,6 +120,42 @@ class DatabaseManager:
                     "last_sync": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
                 },
             )
+
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS cash_transactions (
+                    id VARCHAR PRIMARY KEY,
+                    idempotency_key VARCHAR UNIQUE NOT NULL,
+                    direction VARCHAR NOT NULL,
+                    account_id VARCHAR NOT NULL,
+                    amount DECIMAL(18, 2) NOT NULL,
+                    label VARCHAR NOT NULL,
+                    payment_type VARCHAR NOT NULL,
+                    transaction_date DATE NOT NULL,
+                    requester_telegram_id VARCHAR NOT NULL,
+                    requester_role VARCHAR NOT NULL,
+                    status VARCHAR NOT NULL,
+                    dolibarr_line_id VARCHAR,
+                    approved_by_telegram_id VARCHAR,
+                    rejection_reason VARCHAR,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS audit_events (
+                    id VARCHAR PRIMARY KEY,
+                    event_type VARCHAR NOT NULL,
+                    actor_telegram_id VARCHAR,
+                    entity_type VARCHAR,
+                    entity_id VARCHAR,
+                    details VARCHAR,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
             logger.info("Base DuckDB initialisée : %s", self.db_path)
             return True, "✅ Base de données initialisée."
         except Exception as exc:
@@ -299,6 +335,114 @@ class DatabaseManager:
                 pass
             logger.exception("Erreur sync %s", label)
             return False, f"❌ Erreur sync : {exc}"
+
+    def create_cash_transaction(
+        self,
+        transaction_id,
+        idempotency_key,
+        direction,
+        account_id,
+        amount,
+        label,
+        payment_type,
+        transaction_date,
+        requester_telegram_id,
+        requester_role,
+        status,
+    ):
+        conn = self.connect()
+        try:
+            conn.execute(
+                """
+                INSERT INTO cash_transactions (
+                    id, idempotency_key, direction, account_id, amount, label,
+                    payment_type, transaction_date, requester_telegram_id,
+                    requester_role, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    transaction_id, idempotency_key, direction, account_id,
+                    amount, label, payment_type, transaction_date,
+                    requester_telegram_id, requester_role, status,
+                ],
+            )
+            return True
+        except Exception:
+            logger.exception("Erreur création transaction caisse %s", transaction_id)
+            return False
+
+    def get_cash_transaction(self, transaction_id):
+        return self.connect().execute(
+            "SELECT * FROM cash_transactions WHERE id = ?", [transaction_id]
+        ).fetchone()
+
+    def get_cash_transaction_dict(self, transaction_id):
+        cursor = self.connect().execute(
+            "SELECT * FROM cash_transactions WHERE id = ?", [transaction_id]
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        columns = [item[0] for item in cursor.description]
+        return dict(zip(columns, row))
+
+    def get_cash_transaction_by_idempotency(self, idempotency_key):
+        return self.connect().execute(
+            "SELECT * FROM cash_transactions WHERE idempotency_key = ?", [idempotency_key]
+        ).fetchone()
+
+    def update_cash_transaction(self, transaction_id, **fields):
+        allowed = {
+            "status", "dolibarr_line_id", "approved_by_telegram_id",
+            "rejection_reason", "updated_at",
+        }
+        values = [(key, value) for key, value in fields.items() if key in allowed]
+        if not values:
+            return False
+        assignments = ", ".join(f"{key} = ?" for key, _ in values)
+        params = [value for _, value in values] + [transaction_id]
+        try:
+            self.connect().execute(
+                f"UPDATE cash_transactions SET {assignments}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                params,
+            )
+            return True
+        except Exception:
+            logger.exception("Erreur mise à jour transaction caisse %s", transaction_id)
+            return False
+
+    def list_pending_cash_transactions(self, status=None):
+        conn = self.connect()
+        if status:
+            return conn.execute(
+                "SELECT * FROM cash_transactions WHERE status = ? ORDER BY created_at DESC",
+                [status],
+            ).fetchall()
+        return conn.execute(
+            "SELECT * FROM cash_transactions ORDER BY created_at DESC LIMIT 50"
+        ).fetchall()
+
+    def get_user_ids_by_roles(self, roles):
+        placeholders = ",".join("?" for _ in roles)
+        return self.connect().execute(
+            f"SELECT telegram_id FROM bot_users WHERE is_active = TRUE AND role IN ({placeholders})",
+            list(roles),
+        ).fetchall()
+
+    def add_audit_event(self, event_type, actor_telegram_id=None, entity_type=None, entity_id=None, details=None):
+        import uuid
+        try:
+            self.connect().execute(
+                """
+                INSERT INTO audit_events (id, event_type, actor_telegram_id, entity_type, entity_id, details)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                [str(uuid.uuid4()), event_type, actor_telegram_id, entity_type, entity_id, details],
+            )
+            return True
+        except Exception:
+            logger.exception("Erreur ajout audit event %s", event_type)
+            return False
 
     def close(self):
         if self.conn is not None:
