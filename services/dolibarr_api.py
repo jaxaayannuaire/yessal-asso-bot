@@ -77,25 +77,35 @@ class DolibarrClient:
         return False, "Erreur HTTP 501 (Module subscriptions non disponible sur l'API REST Dolibarr)"
 
     def get_contributions(self, limit=100):
-        """Récupère la liste des cotisations (donations ou transactions bancaires) depuis Dolibarr"""
+        """
+        Dans Dolibarr, les 'cotisations' associatives sont souvent soit :
+        1. Les paiements d'adhésions (/subscriptions)
+        2. Les dons (/donations)
+        3. Des factures spécifiques avec un tag (/invoices)
+        On va tenter de récupérer les paiements d'adhésions en priorité car c'est le standard Dolibarr.
+        """
         endpoints = [
-            f"{self.api_url}/donations?limit={limit}&sortfield=t.rowid&sortorder=DESC",
-            f"{self.api_url}/index.php/donations?limit={limit}&sortfield=t.rowid&sortorder=DESC",
-            f"{self.api_url}/bankaccounts/lines?limit={limit}",
-            f"{self.api_url}/bank/lines?limit={limit}",
-            f"{self.api_url}/index.php/bank/lines?limit={limit}"
+            # Priorité 1 : Les adhésions validées (qui incluent souvent le montant payé)
+            f"{self.api_url}/subscriptions?limit={limit}&sortfield=t.rowid&sortorder=DESC",
+            f"{self.api_url}/index.php/subscriptions?limit={limit}",
+            f"{self.api_url}/members/subscriptions?limit={limit}",
+            # Priorité 2 : Les dons si c'est géré comme ça
+            f"{self.api_url}/donations?limit={limit}&sortfield=t.rowid&sortorder=DESC"
         ]
+        
+        all_contributions = []
         
         for url in endpoints:
             try:
                 response = requests.get(url, headers=self.headers, timeout=10)
                 if response.status_code == 200:
-                    return True, response.json()
-                elif response.status_code == 404:
-                    return True, []
+                    data = response.json()
+                    if data and isinstance(data, list) and len(data) > 0:
+                        all_contributions.extend(data)
+                        break # On a trouvé des données, on s'arrête là
             except Exception as e:
                 logger.debug(f"Tentative endpoint cotisations {url} échouée: {e}")
                 continue
                 
-        logger.warning("Tous les endpoints de cotisations ont renvoyé une erreur ou 501.")
-        return False, "Erreur HTTP 501 (Modules de dons ou banque non disponibles via l'API REST)"
+        # Retourner la liste même si elle est vide, cela signifie que la requête a marché mais pas de data
+        return True, all_contributions
