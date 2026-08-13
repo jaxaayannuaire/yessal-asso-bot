@@ -8,6 +8,7 @@ from services.dolibarr_api import DolibarrClient
 from modules.contacts import sync_contacts_command, search_contact_command
 from modules.members import sync_members_command, search_member_command
 from modules.memberships import sync_memberships_command
+from modules.contributions import sync_contributions_command
 
 load_dotenv()
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -39,11 +40,18 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("init_db", init_db_command))
     app.add_handler(CommandHandler("ping_dolibarr", ping_dolibarr_command))
+    
+    # Modules
     app.add_handler(CommandHandler("sync", sync_contacts_command))
     app.add_handler(CommandHandler("contact", search_contact_command))
+    
     app.add_handler(CommandHandler("sync_members", sync_members_command))
     app.add_handler(CommandHandler("membre", search_member_command))
+    
     app.add_handler(CommandHandler("sync_memberships", sync_memberships_command))
+    
+    # Etape 10 : Cotisations
+    app.add_handler(CommandHandler("sync_contributions", sync_contributions_command))
 
     print("Yessal Asso Bot est en cours d'exécution...")
     app.run_polling()

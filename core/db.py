@@ -73,18 +73,29 @@ class DatabaseManager:
                     last_sync TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+            # 5. Table de cache pour les cotisations (contributions)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS cache_contributions (
+                    id VARCHAR PRIMARY KEY,
+                    ref VARCHAR,
+                    member_id VARCHAR,
+                    amount DECIMAL,
+                    date_payment VARCHAR,
+                    type VARCHAR,
+                    last_sync TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
             
-            return True, "✅ Base de données DuckDB initialisée avec succès."
+            return True, "✅ Base de données DuckDB initialisée avec succès (incluant les cotisations)."
         except Exception as e:
             logger.error(f"Erreur d'initialisation DuckDB : {e}")
             return False, f"❌ Erreur DuckDB : {e}"
             
     def sync_contacts(self, contacts_data):
-        """Met à jour le cache local avec les données de l'API Dolibarr"""
         conn = self.connect()
         try:
             conn.execute("DELETE FROM cache_contacts")
-
             for c in contacts_data:
                 c_id = str(c.get('id', ''))
                 firstname = c.get('firstname', '') or ''
@@ -97,14 +108,12 @@ class DatabaseManager:
                     INSERT INTO cache_contacts (id, firstname, lastname, phone, email, status)
                     VALUES (?, ?, ?, ?, ?, ?)
                 """, [c_id, firstname, lastname, phone, email, status])
-                
             return True, f"✅ {len(contacts_data)} contacts synchronisés en local."
         except Exception as e:
             logger.error(f"Erreur sync_contacts : {e}")
             return False, f"❌ Erreur de synchronisation locale : {e}"
 
     def search_contacts(self, query):
-        """Recherche d'un contact en local"""
         conn = self.connect()
         try:
             search_term = f"%{query.lower()}%"
@@ -120,11 +129,9 @@ class DatabaseManager:
             return []
 
     def sync_members(self, members_data):
-        """Met à jour le cache local des adhérents depuis Dolibarr"""
         conn = self.connect()
         try:
             conn.execute("DELETE FROM cache_members")
-
             for m in members_data:
                 m_id = str(m.get('id', ''))
                 morphy = m.get('morphy', 'mor') or 'mor'
@@ -139,14 +146,12 @@ class DatabaseManager:
                     INSERT INTO cache_members (id, morphy, lastname, firstname, email, phone, status, date_fin)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, [m_id, morphy, lastname, firstname, email, phone, status, date_fin])
-                
             return True, f"✅ {len(members_data)} adhérents synchronisés en local."
         except Exception as e:
             logger.error(f"Erreur sync_members : {e}")
             return False, f"❌ Erreur de synchronisation locale des adhérents : {e}"
 
     def search_members(self, query):
-        """Recherche d'un adhérent en local"""
         conn = self.connect()
         try:
             search_term = f"%{query.lower()}%"
@@ -162,11 +167,9 @@ class DatabaseManager:
             return []
 
     def sync_memberships(self, memberships_data):
-        """Met à jour le cache local des adhésions depuis Dolibarr"""
         conn = self.connect()
         try:
             conn.execute("DELETE FROM cache_memberships")
-
             for sub in memberships_data:
                 sub_id = str(sub.get('id', ''))
                 member_id = str(sub.get('fk_member', ''))
@@ -180,14 +183,35 @@ class DatabaseManager:
                     INSERT INTO cache_memberships (id, member_id, date_subscription, date_start, date_end, amount, status)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, [sub_id, member_id, date_sub, date_start, date_end, amount, status])
-                
             return True, f"✅ {len(memberships_data)} adhésions synchronisées en local."
         except Exception as e:
             logger.error(f"Erreur sync_memberships : {e}")
             return False, f"❌ Erreur de synchronisation locale des adhésions : {e}"
 
+    def sync_contributions(self, contributions_data):
+        """Met à jour le cache local des cotisations depuis Dolibarr"""
+        conn = self.connect()
+        try:
+            conn.execute("DELETE FROM cache_contributions")
+            for contrib in contributions_data:
+                c_id = str(contrib.get('id', ''))
+                ref = str(contrib.get('ref', '')) or str(contrib.get('rowid', ''))
+                member_id = str(contrib.get('fk_member', '')) or str(contrib.get('fk_soc', ''))
+                amount = float(contrib.get('amount', 0.0) or contrib.get('total_ttc', 0.0) or 0.0)
+                date_payment = str(contrib.get('datec', '')) or str(contrib.get('datep', ''))
+                c_type = str(contrib.get('type', 'cotisation'))
+
+                conn.execute("""
+                    INSERT INTO cache_contributions (id, ref, member_id, amount, date_payment, type)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, [c_id, ref, member_id, amount, date_payment, c_type])
+                
+            return True, f"✅ {len(contributions_data)} cotisations synchronisées en local."
+        except Exception as e:
+            logger.error(f"Erreur sync_contributions : {e}")
+            return False, f"❌ Erreur de synchronisation locale des cotisations : {e}"
+
     def close(self):
-        """Ferme proprement la connexion"""
         if self.conn:
             self.conn.close()
             self.conn = None

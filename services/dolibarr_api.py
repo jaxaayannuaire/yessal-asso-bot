@@ -16,7 +16,6 @@ class DolibarrClient:
         }
 
     def ping(self):
-        """Teste la connexion à l'API Dolibarr"""
         if not self.api_url or not self.api_key:
             return False, "❌ URL ou Clé API manquante."
         try:
@@ -29,13 +28,9 @@ class DolibarrClient:
             else:
                 return False, f"⚠️ Erreur ({response.status_code}) : {response.text}"
         except requests.exceptions.RequestException as e:
-            logger.error(f"Erreur réseau Dolibarr : {e}")
             return False, f"❌ Impossible de joindre le serveur : {e}"
 
     def get_contacts(self, limit=100):
-        """Récupère les contacts récents depuis Dolibarr."""
-        if not self.api_url or not self.api_key:
-            return False, "Configuration API manquante."
         try:
             url = f"{self.api_url}/contacts?limit={limit}&sortfield=t.rowid&sortorder=DESC"
             response = requests.get(url, headers=self.headers, timeout=15)
@@ -43,19 +38,14 @@ class DolibarrClient:
                 return True, response.json()
             elif response.status_code == 404:
                 return True, []
-            else:
-                logger.error(f"Erreur API Contacts ({response.status_code}): {response.text}")
-                return False, f"Erreur API: {response.status_code}"
+            return False, f"Erreur API: {response.status_code}"
         except requests.exceptions.RequestException as e:
-            logger.error(f"Erreur requête get_contacts : {e}")
             return False, "Erreur de connexion au serveur."
 
     def get_members(self, limit=100):
-        """Récupère la liste des adhérents (membres) depuis Dolibarr"""
         try:
             url = f"{self.api_url}/members?limit={limit}&sortfield=t.rowid&sortorder=DESC"
             response = requests.get(url, headers=self.headers, timeout=10)
-            
             if response.status_code == 200:
                 return True, response.json()
             elif response.status_code in [404, 501]:
@@ -63,21 +53,37 @@ class DolibarrClient:
                 response_alt = requests.get(url_alt, headers=self.headers, timeout=10)
                 if response_alt.status_code == 200:
                     return True, response_alt.json()
-                
-            logger.error(f"Erreur API Dolibarr (members): {response.status_code} - {response.text}")
             return False, f"Erreur HTTP {response.status_code}"
         except Exception as e:
-            logger.error(f"Exception lors de l'appel get_members : {e}")
             return False, str(e)
 
     def get_memberships(self, limit=100):
-        """Récupère la liste des adhésions / cotisations de membres depuis Dolibarr avec multiples fallbacks"""
         endpoints = [
             f"{self.api_url}/subscriptions?limit={limit}&sortfield=t.rowid&sortorder=DESC",
             f"{self.api_url}/index.php/subscriptions?limit={limit}&sortfield=t.rowid&sortorder=DESC",
             f"{self.api_url}/members/subscriptions?limit={limit}",
             f"{self.api_url}/index.php/members/subscriptions?limit={limit}",
             f"{self.api_url}/adherent/subscriptions?limit={limit}"
+        ]
+        for url in endpoints:
+            try:
+                response = requests.get(url, headers=self.headers, timeout=10)
+                if response.status_code == 200:
+                    return True, response.json()
+                elif response.status_code == 404:
+                    return True, []
+            except Exception as e:
+                continue
+        return False, "Erreur HTTP 501 (Module subscriptions non disponible sur l'API REST Dolibarr)"
+
+    def get_contributions(self, limit=100):
+        """Récupère la liste des cotisations (donations ou transactions bancaires) depuis Dolibarr"""
+        endpoints = [
+            f"{self.api_url}/donations?limit={limit}&sortfield=t.rowid&sortorder=DESC",
+            f"{self.api_url}/index.php/donations?limit={limit}&sortfield=t.rowid&sortorder=DESC",
+            f"{self.api_url}/bankaccounts/lines?limit={limit}",
+            f"{self.api_url}/bank/lines?limit={limit}",
+            f"{self.api_url}/index.php/bank/lines?limit={limit}"
         ]
         
         for url in endpoints:
@@ -88,10 +94,8 @@ class DolibarrClient:
                 elif response.status_code == 404:
                     return True, []
             except Exception as e:
-                logger.debug(f"Tentative endpoint {url} échouée: {e}")
+                logger.debug(f"Tentative endpoint cotisations {url} échouée: {e}")
                 continue
                 
-        # Si aucun endpoint standard ne répond, on simule ou on renvoie une liste vide propre pour éviter le blocage,
-        # ou un message explicatif si le module d'adhésion REST n'est pas activé sur le serveur Dolibarr.
-        logger.warning("Tous les endpoints d'adhésions Dolibarr ont renvoyé une erreur ou 501.")
-        return False, "Erreur HTTP 501 (Module subscriptions non disponible sur l'API REST Dolibarr ou endpoint non activé)"
+        logger.warning("Tous les endpoints de cotisations ont renvoyé une erreur ou 501.")
+        return False, "Erreur HTTP 501 (Modules de dons ou banque non disponibles via l'API REST)"
