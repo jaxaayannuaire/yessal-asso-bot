@@ -9,6 +9,8 @@ from modules.contacts import sync_contacts_command, search_contact_command
 from modules.members import sync_members_command, search_member_command
 from modules.memberships import sync_memberships_command
 from modules.contributions import sync_contributions_command
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler
+from modules.dashboard import dashboard_command, button_callback
 
 load_dotenv()
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -52,6 +54,10 @@ if __name__ == '__main__':
     
     # Etape 10 : Cotisations
     app.add_handler(CommandHandler("sync_contributions", sync_contributions_command))
+    
+    # Etape 11 : Dashboard
+    app.add_handler(CommandHandler("dashboard", dashboard_command))
+    app.add_handler(CallbackQueryHandler(button_callback))
 
     print("Yessal Asso Bot est en cours d'exécution...")
     app.run_polling()

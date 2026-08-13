@@ -211,6 +211,27 @@ class DatabaseManager:
             logger.error(f"Erreur sync_contributions : {e}")
             return False, f"❌ Erreur de synchronisation locale des cotisations : {e}"
 
+    def get_dashboard_stats(self):
+        """Récupère les statistiques globales pour le dashboard"""
+        conn = self.connect()
+        try:
+            stats = {}
+            res = conn.execute("SELECT COUNT(*) FROM cache_contacts").fetchone()
+            stats['total_contacts'] = res[0] if res else 0
+            
+            res = conn.execute("SELECT COUNT(*), SUM(CASE WHEN status='1' THEN 1 ELSE 0 END) FROM cache_members").fetchone()
+            stats['total_members'] = res[0] if res else 0
+            stats['active_members'] = int(res[1]) if res and res[1] else 0
+            
+            res = conn.execute("SELECT SUM(amount) FROM cache_contributions").fetchone()
+            stats['total_contributions'] = float(res[0]) if res and res[0] else 0.0
+            
+            return True, stats
+        except Exception as e:
+            logger.error(f"Erreur get_dashboard_stats : {e}")
+            return False, {}
+    
+    
     def close(self):
         if self.conn:
             self.conn.close()
