@@ -7,12 +7,13 @@ from core.db import DatabaseManager
 from services.dolibarr_api import DolibarrClient
 from modules.contacts import sync_contacts_command, search_contact_command
 from modules.members import sync_members_command, search_member_command
+from modules.memberships import sync_memberships_command
 
 load_dotenv()
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN') or os.getenv('TELEGRAM_BOT_TOKEN')
 
 async def start(update, context):
     await update.message.reply_text("👋 Bienvenue sur Yessal Asso Bot !")
@@ -30,7 +31,7 @@ async def ping_dolibarr_command(update, context):
 
 if __name__ == '__main__':
     if not TELEGRAM_TOKEN:
-        print("Erreur: TELEGRAM_TOKEN manquant dans .env")
+        print("Erreur: TELEGRAM_TOKEN ou TELEGRAM_BOT_TOKEN manquant dans .env")
         exit(1)
 
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
@@ -42,6 +43,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("contact", search_contact_command))
     app.add_handler(CommandHandler("sync_members", sync_members_command))
     app.add_handler(CommandHandler("membre", search_member_command))
+    app.add_handler(CommandHandler("sync_memberships", sync_memberships_command))
 
     print("Yessal Asso Bot est en cours d'exécution...")
     app.run_polling()

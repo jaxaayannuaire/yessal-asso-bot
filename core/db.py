@@ -59,6 +59,20 @@ class DatabaseManager:
                     last_sync TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+            # 4. Table de cache pour les adhésions (memberships)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS cache_memberships (
+                    id VARCHAR PRIMARY KEY,
+                    member_id VARCHAR,
+                    date_subscription VARCHAR,
+                    date_start VARCHAR,
+                    date_end VARCHAR,
+                    amount DECIMAL,
+                    status VARCHAR,
+                    last_sync TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
             
             return True, "✅ Base de données DuckDB initialisée avec succès."
         except Exception as e:
@@ -146,6 +160,31 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Erreur search_members : {e}")
             return []
+
+    def sync_memberships(self, memberships_data):
+        """Met à jour le cache local des adhésions depuis Dolibarr"""
+        conn = self.connect()
+        try:
+            conn.execute("DELETE FROM cache_memberships")
+
+            for sub in memberships_data:
+                sub_id = str(sub.get('id', ''))
+                member_id = str(sub.get('fk_member', ''))
+                date_sub = str(sub.get('dateh', ''))
+                date_start = str(sub.get('date_start', ''))
+                date_end = str(sub.get('date_end', ''))
+                amount = float(sub.get('amount', 0.0) or 0.0)
+                status = str(sub.get('statut', ''))
+
+                conn.execute("""
+                    INSERT INTO cache_memberships (id, member_id, date_subscription, date_start, date_end, amount, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, [sub_id, member_id, date_sub, date_start, date_end, amount, status])
+                
+            return True, f"✅ {len(memberships_data)} adhésions synchronisées en local."
+        except Exception as e:
+            logger.error(f"Erreur sync_memberships : {e}")
+            return False, f"❌ Erreur de synchronisation locale des adhésions : {e}"
 
     def close(self):
         """Ferme proprement la connexion"""

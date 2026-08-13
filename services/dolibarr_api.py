@@ -69,3 +69,23 @@ class DolibarrClient:
         except Exception as e:
             logger.error(f"Exception lors de l'appel get_members : {e}")
             return False, str(e)
+
+    def get_memberships(self, limit=100):
+        """Récupère la liste des adhésions depuis Dolibarr"""
+        try:
+            url = f"{self.api_url}/index.php/subscriptions?limit={limit}&sortfield=t.rowid&sortorder=DESC"
+            response = requests.get(url, headers=self.headers, timeout=10)
+            
+            if response.status_code == 200:
+                return True, response.json()
+            elif response.status_code in [404, 501]:
+                url_alt = f"{self.api_url}/index.php/members/subscriptions?limit={limit}"
+                response_alt = requests.get(url_alt, headers=self.headers, timeout=10)
+                if response_alt.status_code == 200:
+                    return True, response_alt.json()
+                    
+            logger.error(f"Erreur API Dolibarr (subscriptions): {response.status_code} - {response.text}")
+            return False, f"Erreur HTTP {response.status_code}"
+        except Exception as e:
+            logger.error(f"Exception lors de l'appel get_memberships : {e}")
+            return False, str(e)
