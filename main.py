@@ -15,6 +15,7 @@ from modules.jobs import background_sync_job, scheduled_weekly_report
 from modules.report import test_alert_command, weekly_report_command
 from modules.cash import caisse_command, cash_callback, entree_command, sortie_command
 from modules.roles import (
+    bootstrap_super_admin_command,
     create_roles_command,
     link_me_command,
     nommer_admin_command,
@@ -30,7 +31,7 @@ from modules.roles import (
 load_dotenv()
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO),
+    level=getattr(os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO),
 )
 logger = logging.getLogger(__name__)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
@@ -85,6 +86,7 @@ def build_application():
     app.add_handler(CommandHandler("test_alert", test_alert_command))
 
     app.add_handler(CommandHandler("roles", roles_command))
+    app.add_handler(CommandHandler("bootstrap_super_admin", bootstrap_super_admin_command))
     app.add_handler(CommandHandler("sync_roles", sync_roles_command))
     app.add_handler(CommandHandler("creer_groupes", create_roles_command))
     app.add_handler(CommandHandler("lier_moi", link_me_command))

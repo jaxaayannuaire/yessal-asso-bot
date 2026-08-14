@@ -46,6 +46,142 @@ def _numeric_id(context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+
+def _bootstrap_allowed(telegram_id: str) -> bool:
+    """Autorise le bootstrap uniquement aux Telegram IDs explicitement configurés."""
+    import os
+
+    configured = os.getenv("TELEGRAM_ADMIN_IDS", "")
+    allowed = {
+        item.strip()
+        for item in configured.replace(";", ",").split(",")
+        if item.strip()
+    }
+    return str(telegram_id) in allowed
+
+
+async def bootstrap_super_admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Bootstrap initial : lie un Telegram autorisé à un utilisateur Dolibarr."""
+    telegram_id = str(update.effective_user.id)
+
+    if not _bootstrap_allowed(telegram_id):
+        await update.message.reply_text(
+            "⛔ Bootstrap refusé : votre Telegram ID n'est pas autorisé "
+            "dans TELEGRAM_ADMIN_IDS."
+        )
+        return
+
+    did = _numeric_id(context)
+    if not did:
+        await update.message.reply_text(
+            "Usage : /bootstrap_super_admin <ID_DOLIBARR>\n"
+            "Exemple : /bootstrap_super_admin 7"
+        )
+        return
+
+    db = DatabaseManager()
+    client = DolibarrClient()
+
+    try:
+        ensure_schema(db)
+        conn = db.connect()
+
+        existing = conn.execute(
+            "SELECT COUNT(*) FROM bot_users "
+            "WHERE is_active = true AND role = ?",
+            [ROLE_SUPER_ADMIN],
+        ).fetchone()[0]
+
+        if existing:
+            await update.message.reply_text(
+                "⛔ Bootstrap déjà effectué. "
+                "Un Super Admin existe déjà."
+            )
+            return
+
+        # Le compte Dolibarr ciblé doit exister dans le miroir.
+        user = find_dolibarr_user(db, did)
+        if not user:
+            ok, message = sync_from_dolibarr(client, db)
+            if not ok:
+                await update.message.reply_text(message)
+                return
+            user = find_dolibarr_user(db, did)
+
+        if not user:
+            await update.message.reply_text(
+                f"❌ ID Dolibarr {did} introuvable après synchronisation."
+            )
+            return
+
+        # Le premier groupe métier est créé explicitement. Les autres seront
+        # créés ensuite par /creer_groupes une fois le Super Admin actif.
+        group = find_group_by_role(db, ROLE_SUPER_ADMIN)
+        if group:
+            group_id = group[0]
+        else:
+            ok, result = client.create_dolibarr_group(
+                ROLE_GROUP_NAMES[ROLE_SUPER_ADMIN]
+            )
+            if not ok:
+                await update.message.reply_text(
+                    f"❌ Impossible de créer {ROLE_GROUP_NAMES[ROLE_SUPER_ADMIN]} : {result}"
+                )
+                return
+            ok, message = sync_from_dolibarr(client, db)
+            if not ok:
+                await update.message.reply_text(message)
+                return
+            group = find_group_by_role(db, ROLE_SUPER_ADMIN)
+            if not group:
+                await update.message.reply_text(
+                    "❌ Groupe Super Admin créé mais introuvable après synchronisation."
+                )
+                return
+            group_id = group[0]
+
+        ok, result = client.add_user_to_group(user[0], group_id)
+        if not ok:
+            await update.message.reply_text(
+                f"❌ Impossible d'ajouter l'ID Dolibarr {did} au groupe "
+                f"{ROLE_GROUP_NAMES[ROLE_SUPER_ADMIN]} : {result}"
+            )
+            return
+
+        # Le rôle historique est conservé uniquement comme bootstrap/migration.
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO bot_users
+            (telegram_id, username, role, dolibarr_contact_id, is_active, dolibarr_user_id)
+            VALUES (?, ?, ?, NULL, true, ?)
+            """,
+            [
+                telegram_id,
+                update.effective_user.username or "",
+                ROLE_SUPER_ADMIN,
+                did,
+            ],
+        )
+
+        ok, message = sync_from_dolibarr(client, db)
+        if not ok:
+            await update.message.reply_text(
+                "⚠️ Bootstrap effectué, mais la resynchronisation du miroir a échoué : "
+                + message
+            )
+            return
+
+        await update.message.reply_text(
+            f"✅ Bootstrap Super Admin terminé.\n\n"
+            f"Telegram ID : {telegram_id}\n"
+            f"Dolibarr ID : {did}\n"
+            f"Groupe : {ROLE_GROUP_NAMES[ROLE_SUPER_ADMIN]}\n\n"
+            "Vous pouvez maintenant utiliser /creer_groupes pour créer les autres "
+            "groupes métier Yessal."
+        )
+    finally:
+        db.close()
+
 async def sync_roles_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _authorized(update):
         await update.message.reply_text("⛔ Réservé au Super Admin.")
