@@ -14,6 +14,18 @@ from modules.dashboard import button_callback, dashboard_command
 from modules.jobs import background_sync_job, scheduled_weekly_report
 from modules.report import test_alert_command, weekly_report_command
 from modules.cash import caisse_command, cash_callback, entree_command, sortie_command
+from modules.roles import (
+    create_roles_command,
+    link_me_command,
+    nommer_admin_command,
+    nommer_bureau_command,
+    nommer_membre_command,
+    nommer_president_command,
+    nommer_tresorier_command,
+    refresh_command_menu,
+    roles_command,
+    sync_roles_command,
+)
 
 load_dotenv()
 logging.basicConfig(
@@ -21,12 +33,17 @@ logging.basicConfig(
     level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO),
 )
 logger = logging.getLogger(__name__)
-
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
 
 
 async def start(update, context):
-    await update.message.reply_text("👋 Bienvenue sur Yessal Asso Bot !")
+    await refresh_command_menu(context.bot, update.effective_user.id)
+    await update.message.reply_text(
+        "👋 Bienvenue sur *Yessal Asso Bot*.\n\n"
+        "Les commandes affichées dans votre menu dépendent de vos droits.\n"
+        "Les contrôles d'accès sont également appliqués à chaque commande.",
+        parse_mode="Markdown",
+    )
 
 
 async def init_db_command(update, context):
@@ -67,13 +84,22 @@ def build_application():
     app.add_handler(CommandHandler("report", weekly_report_command))
     app.add_handler(CommandHandler("test_alert", test_alert_command))
 
+    app.add_handler(CommandHandler("roles", roles_command))
+    app.add_handler(CommandHandler("sync_roles", sync_roles_command))
+    app.add_handler(CommandHandler("creer_groupes", create_roles_command))
+    app.add_handler(CommandHandler("lier_moi", link_me_command))
+    app.add_handler(CommandHandler("nommer_tresorier", nommer_tresorier_command))
+    app.add_handler(CommandHandler("nommer_president", nommer_president_command))
+    app.add_handler(CommandHandler("nommer_bureau", nommer_bureau_command))
+    app.add_handler(CommandHandler("nommer_admin", nommer_admin_command))
+    app.add_handler(CommandHandler("nommer_membre", nommer_membre_command))
+
     if app.job_queue:
         app.job_queue.run_repeating(background_sync_job, interval=21600, first=10)
         app.job_queue.run_repeating(scheduled_weekly_report, interval=604800, first=30)
         logger.info("JobQueue configurée : sync et rapport hebdomadaire actifs.")
     else:
         logger.warning("JobQueue indisponible : jobs automatiques désactivés.")
-
     return app
 
 
