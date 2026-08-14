@@ -10,63 +10,107 @@ logger = logging.getLogger(__name__)
 
 
 class DolibarrClient:
-    """Client REST minimal et centralisé pour Dolibarr."""
+    """Client REST centralisé pour Dolibarr."""
 
     def __init__(self):
         self.api_url = (os.getenv("DOLIBARR_API_URL") or "").rstrip("/")
         self.api_key = os.getenv("DOLIBARR_API_KEY") or ""
         self.timeout = int(os.getenv("DOLIBARR_API_TIMEOUT", "15"))
         self.headers = {"DOLAPIKEY": self.api_key, "Accept": "application/json"}
+        self.version = None
 
-    def _get(self, path, params=None, timeout=None):
+    def _request(self, method, path, payload=None, params=None, timeout=None):
         if not self.api_url or not self.api_key:
             return False, "❌ URL ou Clé API Dolibarr manquante."
         url = f"{self.api_url}/{path.lstrip('/')}"
+        headers = {**self.headers}
+        if payload is not None:
+            headers["Content-Type"] = "application/json"
         try:
-            response = requests.get(url, headers=self.headers, params=params, timeout=timeout or self.timeout)
-            if response.status_code == 200:
-                return True, response.json()
-            if response.status_code == 404:
-                return True, []
-            return False, f"Erreur HTTP {response.status_code}"
-        except requests.RequestException as exc:
-            logger.warning("Erreur réseau Dolibarr sur %s: %s", path, exc)
-            return False, f"Erreur réseau : {exc}"
-        except ValueError:
-            logger.error("Réponse JSON invalide Dolibarr sur %s", path)
-            return False, "Réponse JSON invalide de Dolibarr."
-
-    def _post(self, path, payload, timeout=None):
-        if not self.api_url or not self.api_key:
-            return False, "❌ URL ou Clé API Dolibarr manquante."
-        url = f"{self.api_url}/{path.lstrip('/')}"
-        try:
-            response = requests.post(
-                url,
-                headers={**self.headers, "Content-Type": "application/json"},
-                json=payload,
+            response = requests.request(
+                method, url, headers=headers, params=params,
+                json=payload if payload is not None else None,
                 timeout=timeout or self.timeout,
             )
-            if response.status_code in (200, 201):
+            if 200 <= response.status_code < 300:
+                if not response.content:
+                    return True, None
                 try:
                     return True, response.json()
                 except ValueError:
                     return True, response.text
+            if response.status_code == 404 and method == "GET":
+                return True, []
             try:
                 detail = response.json()
             except ValueError:
                 detail = response.text
-            logger.warning("Dolibarr POST %s -> HTTP %s: %s", path, response.status_code, detail)
+            logger.warning(
+                "Dolibarr %s %s -> HTTP %s: %s",
+                method, path, response.status_code, detail,
+            )
             return False, f"Erreur HTTP {response.status_code}: {detail}"
         except requests.RequestException as exc:
-            logger.warning("Erreur réseau Dolibarr POST %s: %s", path, exc)
+            logger.warning("Erreur réseau Dolibarr %s %s: %s", method, path, exc)
             return False, f"Erreur réseau : {exc}"
 
-    def ping(self):
+    def _get(self, path, params=None, timeout=None):
+        return self._request("GET", path, params=params, timeout=timeout)
+
+    def _post(self, path, payload, timeout=None):
+        return self._request("POST", path, payload=payload, timeout=timeout)
+
+    def _put(self, path, payload, timeout=None):
+        return self._request("PUT", path, payload=payload, timeout=timeout)
+
+    def _delete(self, path, timeout=None):
+        return self._request("DELETE", path, timeout=timeout)
+
+    def get_version(self, refresh=False):
+        if self.version and not refresh:
+            return True, self.version
         success, data = self._get("status", timeout=10)
         if not success:
             return False, data
-        version = data.get("dolibarr_version", "Inconnue") if isinstance(data, dict) else "Inconnue"
+        version = None
+        if isinstance(data, dict):
+            nested = data.get("success")
+            if isinstance(nested, dict):
+                version = nested.get("dolibarr_version")
+            version = version or data.get("dolibarr_version")
+        self.version = str(version or "unknown")
+        return True, self.version
+
+    def get_api_capabilities(self):
+        success, version = self.get_version()
+        if not success:
+            return False, version
+        capabilities = {
+            "groups.list": True,
+            "groups.read": True,
+            "groups.create": False,
+            "groups.update": False,
+            "groups.delete": False,
+            "user_groups.add": True,
+            "user_groups.remove": False,
+        }
+        try:
+            major = int(str(version).split(".", 1)[0])
+        except (TypeError, ValueError):
+            major = 0
+        if major >= 23:
+            capabilities.update({
+                "groups.create": True,
+                "groups.update": True,
+                "groups.delete": True,
+                "user_groups.remove": True,
+            })
+        return True, capabilities
+
+    def ping(self):
+        success, version = self.get_version(refresh=True)
+        if not success:
+            return False, version
         return True, f"✅ Connexion réussie ! (Version : {version})"
 
     def get_contacts(self, limit=100):
@@ -126,33 +170,28 @@ class DolibarrClient:
         )
 
     def get_dolibarr_users(self, limit=500):
-        """Liste les utilisateurs Dolibarr accessibles par la clé API."""
         return self._get("users", {"limit": limit, "sortfield": "t.rowid", "sortorder": "ASC"})
 
     def get_dolibarr_user(self, user_id):
         return self._get(f"users/{int(user_id)}")
 
     def get_dolibarr_user_groups(self, user_id):
-        """Liste les groupes d'un utilisateur Dolibarr."""
         return self._get(f"users/{int(user_id)}/groups")
 
     def get_dolibarr_groups(self, limit=500):
-        """Liste les groupes d'utilisateurs Dolibarr."""
         return self._get("users/groups", {"limit": limit, "sortfield": "t.rowid", "sortorder": "ASC"})
 
     def create_dolibarr_group(self, name):
-        """Crée un groupe Dolibarr si la clé API dispose des droits requis."""
         return self._post("users/groups", {"name": name})
 
-    def add_user_to_group(self, user_id, group_id):
-        """Ajoute un utilisateur à un groupe.
+    def update_dolibarr_group(self, group_id, payload):
+        return self._put(f"users/groups/{int(group_id)}", payload)
 
-        Dolibarr expose cette opération en GET /users/{id}/setGroup/{group}
-        dans les versions historiques de l'API Users.
-        """
+    def delete_dolibarr_group(self, group_id):
+        return self._delete(f"users/groups/{int(group_id)}")
+
+    def add_user_to_group(self, user_id, group_id):
         return self._get(f"users/{int(user_id)}/setGroup/{int(group_id)}")
 
     def remove_user_from_group(self, user_id, group_id):
-        """Retire un utilisateur d'un groupe sur les versions qui exposent
-        POST /users/{id}/remove-group/{group}."""
         return self._post(f"users/{int(user_id)}/remove-group/{int(group_id)}", {})
