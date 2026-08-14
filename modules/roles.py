@@ -1,6 +1,15 @@
-"""Administration des groupes métier Yessal dans Dolibarr."""
+"""Administration et attribution des groupes métier Yessal dans Dolibarr.
+
+Phase 17A.4:
+- les rôles métier sont attribués à partir d'un ID utilisateur Dolibarr;
+- Dolibarr reste la source de vérité des rôles;
+- DuckDB ne conserve qu'un miroir technique;
+- seuls les Super Admins peuvent nommer un rôle;
+- après attribution, le menu Telegram du compte lié est rafraîchi.
+"""
 
 import logging
+import os
 
 from telegram import BotCommand, BotCommandScopeChat, Update
 from telegram.ext import ContextTypes
@@ -33,6 +42,14 @@ MANAGED_ROLES = (
     ROLE_MEMBRE,
 )
 
+ROLE_COMMANDS = {
+    ROLE_PRESIDENT: "nommer_president",
+    ROLE_BUREAU: "nommer_bureau",
+    ROLE_TRESORIER: "nommer_tresorier",
+    ROLE_ADMIN: "nommer_admin",
+    ROLE_MEMBRE: "nommer_membre",
+}
+
 
 def _authorized(update: Update) -> bool:
     return AuthManager().is_super_admin(str(update.effective_user.id))
@@ -46,11 +63,8 @@ def _numeric_id(context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-
 def _bootstrap_allowed(telegram_id: str) -> bool:
     """Autorise le bootstrap uniquement aux Telegram IDs explicitement configurés."""
-    import os
-
     configured = os.getenv("TELEGRAM_ADMIN_IDS", "")
     allowed = {
         item.strip()
@@ -94,12 +108,10 @@ async def bootstrap_super_admin_command(update: Update, context: ContextTypes.DE
 
         if existing:
             await update.message.reply_text(
-                "⛔ Bootstrap déjà effectué. "
-                "Un Super Admin existe déjà."
+                "⛔ Bootstrap déjà effectué. Un Super Admin existe déjà."
             )
             return
 
-        # Le compte Dolibarr ciblé doit exister dans le miroir.
         user = find_dolibarr_user(db, did)
         if not user:
             ok, message = sync_from_dolibarr(client, db)
@@ -114,8 +126,6 @@ async def bootstrap_super_admin_command(update: Update, context: ContextTypes.DE
             )
             return
 
-        # Le premier groupe métier est créé explicitement. Les autres seront
-        # créés ensuite par /creer_groupes une fois le Super Admin actif.
         group = find_group_by_role(db, ROLE_SUPER_ADMIN)
         if group:
             group_id = group[0]
@@ -128,10 +138,12 @@ async def bootstrap_super_admin_command(update: Update, context: ContextTypes.DE
                     f"❌ Impossible de créer {ROLE_GROUP_NAMES[ROLE_SUPER_ADMIN]} : {result}"
                 )
                 return
+
             ok, message = sync_from_dolibarr(client, db)
             if not ok:
                 await update.message.reply_text(message)
                 return
+
             group = find_group_by_role(db, ROLE_SUPER_ADMIN)
             if not group:
                 await update.message.reply_text(
@@ -148,7 +160,6 @@ async def bootstrap_super_admin_command(update: Update, context: ContextTypes.DE
             )
             return
 
-        # Le rôle historique est conservé uniquement comme bootstrap/migration.
         conn.execute(
             """
             INSERT OR REPLACE INTO bot_users
@@ -172,7 +183,7 @@ async def bootstrap_super_admin_command(update: Update, context: ContextTypes.DE
             return
 
         await update.message.reply_text(
-            f"✅ Bootstrap Super Admin terminé.\n\n"
+            "✅ Bootstrap Super Admin terminé.\n\n"
             f"Telegram ID : {telegram_id}\n"
             f"Dolibarr ID : {did}\n"
             f"Groupe : {ROLE_GROUP_NAMES[ROLE_SUPER_ADMIN]}\n\n"
@@ -181,6 +192,7 @@ async def bootstrap_super_admin_command(update: Update, context: ContextTypes.DE
         )
     finally:
         db.close()
+
 
 async def sync_roles_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _authorized(update):
@@ -225,7 +237,10 @@ async def create_roles_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
             created.append(ROLE_GROUP_NAMES[role])
 
-        sync_from_dolibarr(client, db)
+        ok, message = sync_from_dolibarr(client, db)
+        if not ok:
+            await update.message.reply_text(message)
+            return
 
         lines = ["👥 GROUPES MÉTIER YESSAL", ""]
         if created:
@@ -294,50 +309,111 @@ async def link_me_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.close()
 
 
-async def _assign_role(update, context, role):
+def _role_assignment_usage(role: str) -> str:
+    command = ROLE_COMMANDS[role]
+    return f"Usage : /{command} <ID_DOLIBARR>\nExemple : /{command} 7"
+
+
+def _linked_telegram_ids(db, dolibarr_user_id: str) -> list[str]:
+    """Retourne les comptes Telegram liés au même utilisateur Dolibarr."""
+    rows = db.connect().execute(
+        """
+        SELECT telegram_id
+        FROM bot_users
+        WHERE dolibarr_user_id = ?
+          AND is_active = true
+        """,
+        [str(dolibarr_user_id)],
+    ).fetchall()
+    return [str(row[0]) for row in rows]
+
+
+async def _refresh_linked_menus(bot, db, dolibarr_user_id: str) -> None:
+    """Rafraîchit les menus Telegram après une modification de rôle."""
+    for telegram_id in _linked_telegram_ids(db, dolibarr_user_id):
+        try:
+            await refresh_command_menu(bot, telegram_id)
+        except Exception:
+            logger.exception(
+                "Échec du rafraîchissement du menu Telegram pour %s",
+                telegram_id,
+            )
+
+
+async def _assign_role(update: Update, context: ContextTypes.DEFAULT_TYPE, role: str):
+    """Ajoute un utilisateur Dolibarr au groupe métier correspondant."""
     if not _authorized(update):
         await update.message.reply_text("⛔ Réservé au Super Admin.")
         return
 
     did = _numeric_id(context)
     if not did:
-        await update.message.reply_text(
-            f"Usage : /nommer_{role} <ID_DOLIBARR>\n"
-            "Exemple : /nommer_tresorier 6"
-        )
+        await update.message.reply_text(_role_assignment_usage(role))
         return
 
     db = DatabaseManager()
     client = DolibarrClient()
+
     try:
         ensure_schema(db)
-        target = find_dolibarr_user(db, did)
-        group = find_group_by_role(db, role)
 
+        # Toujours synchroniser avant la décision : Dolibarr est la source de vérité.
+        sync_ok, sync_message = sync_from_dolibarr(client, db)
+        if not sync_ok:
+            await update.message.reply_text(sync_message)
+            return
+
+        target = find_dolibarr_user(db, did)
         if not target:
             await update.message.reply_text(
-                f"❌ Utilisateur Dolibarr ID {did} introuvable. Faites /sync_roles."
+                f"❌ Utilisateur Dolibarr ID {did} introuvable."
             )
             return
 
+        if not target[5]:
+            await update.message.reply_text(
+                f"❌ L'utilisateur Dolibarr ID {did} est désactivé."
+            )
+            return
+
+        group = find_group_by_role(db, role)
         if not group:
             await update.message.reply_text(
-                f"❌ Groupe {ROLE_GROUP_NAMES[role]} introuvable. Utilisez /creer_groupes."
+                f"❌ Groupe {ROLE_GROUP_NAMES[role]} introuvable. "
+                "Utilisez /creer_groupes."
             )
             return
 
         ok, result = client.add_user_to_group(target[0], group[0])
         if not ok:
             await update.message.reply_text(
-                f"❌ Impossible de modifier le groupe : {result}"
+                f"❌ Impossible d'ajouter l'ID Dolibarr {did} à "
+                f"{ROLE_GROUP_NAMES[role]} : {result}"
             )
             return
 
-        sync_from_dolibarr(client, db)
+        # Le groupe Dolibarr vient d'être modifié : on resynchronise immédiatement.
+        sync_ok, sync_message = sync_from_dolibarr(client, db)
+        if not sync_ok:
+            await update.message.reply_text(
+                "⚠️ Rôle attribué dans Dolibarr, mais la synchronisation du miroir "
+                f"a échoué : {sync_message}"
+            )
+            return
+
+        await _refresh_linked_menus(
+            update.get_bot(),
+            db,
+            str(target[0]),
+        )
 
         await update.message.reply_text(
-            f"✅ ID Dolibarr {target[0]} ajouté à {group[1]}.\n"
-            "Les permissions Telegram sont désormais calculées depuis Dolibarr."
+            f"✅ Rôle attribué.\n\n"
+            f"Utilisateur Dolibarr : {target[0]}\n"
+            f"Nom : {target[2]} {target[3]}\n"
+            f"Groupe : {ROLE_GROUP_NAMES[role]}\n\n"
+            "Les permissions Telegram sont désormais calculées depuis les groupes "
+            "métier Dolibarr."
         )
     finally:
         db.close()
@@ -379,7 +455,6 @@ async def roles_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def refresh_command_menu(bot, telegram_id):
     """Met à jour le menu Telegram selon les permissions actuelles."""
-
     auth = AuthManager()
     telegram_id = str(telegram_id)
     roles = auth.get_roles(telegram_id)
