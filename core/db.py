@@ -336,6 +336,7 @@ class DatabaseManager:
             logger.exception("Erreur get_weekly_report_data")
             return False, {}
 
+
     def _replace_rows(self, table, data, label, mapper, sql):
         try:
             rows = [mapper(item) for item in (data or [])]
@@ -346,18 +347,38 @@ class DatabaseManager:
 
     def _replace_prepared(self, table, rows, label, sql):
         conn = self.connect()
+
         try:
-            conn.execute("BEGIN TRANSACTION")
+            # Vérification des doublons dans les données reçues.
+            ids = [row[0] for row in rows]
+
+            if len(ids) != len(set(ids)):
+                raise ValueError(
+                    f"Données {label} invalides : identifiants en double."
+                )
+
+            # IMPORTANT :
+            # DuckDB peut conserver temporairement les anciennes clés
+            # d'index après DELETE dans une même transaction.
+            #
+            # On valide donc le DELETE avant de réinsérer les données.
             conn.execute(f"DELETE FROM {table}")
+            conn.commit()
+
+            # Réinsertion du miroir local.
             if rows:
                 conn.executemany(sql, rows)
-            conn.execute("COMMIT")
+
+            conn.commit()
+
             return True, f"✅ {len(rows)} {label} synchronisés en local."
+
         except Exception as exc:
             try:
-                conn.execute("ROLLBACK")
+                conn.rollback()
             except Exception:
                 pass
+
             logger.exception("Erreur sync %s", label)
             return False, f"❌ Erreur sync : {exc}"
 
