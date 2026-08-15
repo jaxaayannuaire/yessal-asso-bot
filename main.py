@@ -31,6 +31,12 @@ from modules.telegram_link import (
     generate_link_command,
     link_command,
 )
+from modules.registration import (
+    inscrire_membre_command,
+    creer_contact_command,
+    creer_tiers_command,
+    creer_operateur_command,
+)
 
 load_dotenv()
 logging.basicConfig(
@@ -102,6 +108,10 @@ def build_application():
 
     app.add_handler(CommandHandler("generer_lien", generate_link_command))
     app.add_handler(CommandHandler("lier", link_command))
+    app.add_handler(CommandHandler("inscrire_membre", inscrire_membre_command))
+    app.add_handler(CommandHandler("creer_contact", creer_contact_command))
+    app.add_handler(CommandHandler("creer_tiers", creer_tiers_command))
+    app.add_handler(CommandHandler("creer_operateur", creer_operateur_command))
 
     if app.job_queue:
         app.job_queue.run_repeating(background_sync_job, interval=21600, first=10)

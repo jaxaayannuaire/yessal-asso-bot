@@ -479,6 +479,15 @@ async def refresh_command_menu(bot, telegram_id):
             ]
         )
 
+    if auth.has_permission(telegram_id, "members.create"):
+        commands.extend(
+            [
+                BotCommand("inscrire_membre", "Inscrire un adhérent actif"),
+                BotCommand("creer_contact", "Créer un contact"),
+                BotCommand("creer_tiers", "Créer un tiers"),
+            ]
+        )
+
     if auth.has_permission(telegram_id, "caisse.view"):
         commands.append(BotCommand("caisse", "Situation caisse"))
 
@@ -496,6 +505,7 @@ async def refresh_command_menu(bot, telegram_id):
                 BotCommand("sync_roles", "Synchroniser les rôles"),
                 BotCommand("creer_groupes", "Créer les groupes Yessal"),
                 BotCommand("lier_moi", "Lier un utilisateur Dolibarr par ID"),
+                BotCommand("creer_operateur", "Créer un opérateur Yessal"),
                 BotCommand("nommer_tresorier", "Nommer un trésorier par ID"),
                 BotCommand("nommer_president", "Nommer le président par ID"),
                 BotCommand("nommer_bureau", "Nommer le bureau par ID"),

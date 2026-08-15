@@ -190,6 +190,33 @@ class DolibarrClient:
     def delete_dolibarr_group(self, group_id):
         return self._delete(f"users/groups/{int(group_id)}")
 
+    def create_dolibarr_user(self, payload):
+        return self._post("users", payload)
+
+    def delete_dolibarr_user(self, user_id):
+        return self._delete(f"users/{int(user_id)}")
+
+    def create_dolibarr_member(self, payload):
+        return self._post("members", payload)
+
+    def delete_dolibarr_member(self, member_id):
+        return self._delete(f"members/{int(member_id)}")
+
+    def get_dolibarr_member_types(self, limit=100):
+        return self._get("members/types", {"limit": limit})
+
+    def create_dolibarr_contact(self, payload):
+        return self._post("contacts", payload)
+
+    def delete_dolibarr_contact(self, contact_id):
+        return self._delete(f"contacts/{int(contact_id)}")
+
+    def create_dolibarr_thirdparty(self, payload):
+        return self._post("thirdparties", payload)
+
+    def delete_dolibarr_thirdparty(self, thirdparty_id):
+        return self._delete(f"thirdparties/{int(thirdparty_id)}")
+
     def add_user_to_group(self, user_id, group_id):
         return self._get(f"users/{int(user_id)}/setGroup/{int(group_id)}")
 
