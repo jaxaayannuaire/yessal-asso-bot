@@ -101,7 +101,11 @@ def _member_type_id(client, requested=None):
             continue
         iid = item.get("id", item.get("rowid"))
         label = item.get("label", item.get("name", item.get("nom", "")))
-        status = item.get("statut", item.get("status", 1))
+        status = item.get("statut")
+        if status is None:
+            status = item.get("status", 1)
+        if status is None:
+            status = 1
         try:
             enabled = int(status) != 0
         except (TypeError, ValueError):
