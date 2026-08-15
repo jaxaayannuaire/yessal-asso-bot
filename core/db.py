@@ -39,6 +39,15 @@ class DatabaseManager:
                 )
                 """
             )
+            # Migration additive : liaison Telegram <-> utilisateur Dolibarr.
+            # Dolibarr reste la source de vérité pour l'identité et les rôles.
+            self._ensure_columns(
+                "bot_users",
+                {
+                    "dolibarr_user_id": "VARCHAR",
+                },
+            )
+
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS cache_contacts (
@@ -156,6 +165,22 @@ class DatabaseManager:
                 )
                 """
             )
+
+            # Phase 17A.5 : jetons temporaires pour la liaison sécurisée
+            # Telegram <-> utilisateur Dolibarr.
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS telegram_link_tokens (
+                    token_hash VARCHAR PRIMARY KEY,
+                    dolibarr_user_id VARCHAR NOT NULL,
+                    created_by_telegram_id VARCHAR NOT NULL,
+                    expires_at TIMESTAMP NOT NULL,
+                    used_at TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+
             logger.info("Base DuckDB initialisée : %s", self.db_path)
             return True, "✅ Base de données initialisée."
         except Exception as exc:

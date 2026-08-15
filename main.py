@@ -27,6 +27,10 @@ from modules.roles import (
     roles_command,
     sync_roles_command,
 )
+from modules.telegram_link import (
+    generate_link_command,
+    link_command,
+)
 
 load_dotenv()
 logging.basicConfig(
@@ -95,6 +99,9 @@ def build_application():
     app.add_handler(CommandHandler("nommer_bureau", nommer_bureau_command))
     app.add_handler(CommandHandler("nommer_admin", nommer_admin_command))
     app.add_handler(CommandHandler("nommer_membre", nommer_membre_command))
+
+    app.add_handler(CommandHandler("generer_lien", generate_link_command))
+    app.add_handler(CommandHandler("lier", link_command))
 
     if app.job_queue:
         app.job_queue.run_repeating(background_sync_job, interval=21600, first=10)
