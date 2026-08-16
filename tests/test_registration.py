@@ -82,3 +82,26 @@ def test_link_dolibarr_user_to_member():
     assert ok is True
     assert result["fk_member"] == "101"
     assert ("link_member", "404", "101") in client.calls
+
+
+def test_operator_confirmation_uses_html_and_escapes_markdown_sensitive_values():
+    confirmation = registration._operator_confirmation_message(
+        "Amadou", "TESTOPERATEUR", "amadou2026test2", "12", "16",
+        "tresorier", "abc_def-123",
+    )
+
+    assert "parse_mode=\"Markdown\"" not in confirmation
+    assert "<code>YESSAL_TRESORIER</code>" in confirmation
+    assert "<code>abc_def-123</code>" in confirmation
+    assert "<code>/lier abc_def-123</code>" in confirmation
+
+
+def test_operator_confirmation_escapes_html_values():
+    confirmation = registration._operator_confirmation_message(
+        "Amadou &", "<TEST>", "login_&", "12", "16",
+        "tresorier", "tok_<x>",
+    )
+
+    assert "Amadou &amp; &lt;TEST&gt;" in confirmation
+    assert "<code>login_&amp;</code>" in confirmation
+    assert "<code>tok_&lt;x&gt;</code>" in confirmation

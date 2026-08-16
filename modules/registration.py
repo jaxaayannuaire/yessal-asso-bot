@@ -11,6 +11,7 @@ Règles:
 import secrets
 import unicodedata
 import re
+from html import escape
 
 from core.auth import AuthManager
 from core.db import DatabaseManager
@@ -71,6 +72,29 @@ def _safe_login(firstname, lastname, requested=""):
     raw = raw.encode("ascii", "ignore").decode("ascii")
     raw = re.sub(r"[^a-zA-Z0-9]+", "", raw).lower()
     return (raw[:28] or "operateur")
+
+def _operator_confirmation_message(firstname, lastname, login, user_id, member_id, role, token):
+    """Construit le message final envoyé après création d'un opérateur.
+
+    HTML est utilisé plutôt que Markdown afin d'éviter les erreurs Telegram
+    provoquées par des valeurs dynamiques contenant notamment des underscores.
+    """
+    role_label = ROLE_GROUP_NAMES.get(role, role)
+    return (
+        "👤 <b>OPÉRATEUR YESSAL CRÉÉ</b>\n\n"
+        f"Nom : {escape(f'{firstname} {lastname}')}\n"
+        f"Login Dolibarr : <code>{escape(login)}</code>\n"
+        f"Utilisateur Dolibarr : <code>{escape(str(user_id))}</code>\n"
+        f"Adhérent actif : <code>{escape(str(member_id or 'créé'))}</code>\n"
+        f"Rôle : <code>{escape(str(role_label))}</code>\n\n"
+        "🔐 <b>LIEN TELEGRAM</b>\n"
+        f"Jeton : <code>{escape(token)}</code>\n"
+        "Validité : 10 minutes\n"
+        "Usage unique.\n\n"
+        "L'opérateur doit envoyer au bot :\n"
+        f"<code>/lier {escape(token)}</code>"
+    )
+
 
 def _extract_id(result):
     if isinstance(result, (int, str)) and str(result).isdigit():
@@ -437,18 +461,7 @@ async def creer_operateur_command(update, context):
     finally:
         db.close()
 
-    await update.message.reply_text(
-        "👤 OPÉRATEUR YESSAL CRÉÉ\n\n"
-        f"Nom : {firstname} {lastname}\n"
-        f"Login Dolibarr : {login}\n"
-        f"Utilisateur Dolibarr : {user_id}\n"
-        f"Adhérent actif : {member_id or 'créé'}\n"
-        f"Rôle : {ROLE_GROUP_NAMES.get(role, role)}\n\n"
-        "🔐 LIEN TELEGRAM\n"
-        f"Jeton : `{token}`\n"
-        "Validité : 10 minutes\n"
-        "Usage unique.\n\n"
-        "L'opérateur doit envoyer au bot :\n"
-        f"`/lier {token}`",
-        parse_mode="Markdown",
+    confirmation = _operator_confirmation_message(
+        firstname, lastname, login, user_id, member_id, role, token
     )
+    await update.message.reply_text(confirmation, parse_mode="HTML")
