@@ -135,7 +135,17 @@ async def inscrire_membre_command(update, context):
     email = parts[3] if len(parts) >= 4 else ""
     requested_type = parts[4] if len(parts) >= 5 else None
     client = DolibarrClient()
-    ok_type, type_value = _member_type_id(client, requested_type)
+    type_result = _member_type_id(client, requested_type)
+
+    if isinstance(type_result, tuple):
+        ok_type, type_value = type_result
+        if not ok_type:
+            await update.message.reply_text(f"❌ {type_value}")
+            return
+    else:
+        ok_type = True
+        type_value = type_result
+        
     if not ok_type:
         await update.message.reply_text(f"❌ {type_value}")
         return
@@ -287,7 +297,16 @@ async def creer_operateur_command(update, context):
         return
 
     client = DolibarrClient()
-    ok_type, type_value = _member_type_id(client, requested_type)
+    type_result = _member_type_id(client, requested_type)
+
+    if isinstance(type_result, tuple):
+        ok_type, type_value = type_result
+        if not ok_type:
+            await update.message.reply_text(f"❌ {type_value}")
+            return
+    else:
+        ok_type = True
+        type_value = type_result
     if not ok_type:
         await update.message.reply_text(f"❌ {type_value}")
         return
