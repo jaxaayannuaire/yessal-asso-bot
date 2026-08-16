@@ -32,6 +32,14 @@ class FakeClient:
         self.calls.append(("delete_user", user_id))
         return True, {"success": {"code": 200}}
 
+    def delete_dolibarr_member(self, member_id):
+        self.calls.append(("delete_member", member_id))
+        return True, {"success": {"code": 200}}
+
+    def link_dolibarr_user_to_member(self, user_id, member_id):
+        self.calls.append(("link_member", user_id, member_id))
+        return True, {"id": str(user_id), "fk_member": str(member_id)}
+
     def add_user_to_group(self, user_id, group_id):
         self.calls.append(("group", user_id, group_id))
         return True, 1
@@ -66,3 +74,11 @@ def test_extract_id():
     assert registration._extract_id("123") == "123"
     assert registration._extract_id({"id": 456}) == "456"
     assert registration._extract_id({"success": {"id": "789"}}) == "789"
+
+
+def test_link_dolibarr_user_to_member():
+    client = FakeClient()
+    ok, result = client.link_dolibarr_user_to_member("404", "101")
+    assert ok is True
+    assert result["fk_member"] == "101"
+    assert ("link_member", "404", "101") in client.calls

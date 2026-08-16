@@ -196,6 +196,13 @@ class DolibarrClient:
     def delete_dolibarr_user(self, user_id):
         return self._delete(f"users/{int(user_id)}")
 
+    def link_dolibarr_user_to_member(self, user_id, member_id):
+        """Lie un utilisateur Dolibarr à son adhérent."""
+        return self._put(
+            f"users/{int(user_id)}",
+            {"fk_member": int(member_id)},
+        )
+        
     def create_dolibarr_member(self, payload):
         return self._post("members", payload)
 
@@ -222,3 +229,4 @@ class DolibarrClient:
 
     def remove_user_from_group(self, user_id, group_id):
         return self._post(f"users/{int(user_id)}/remove-group/{int(group_id)}", {})
+    

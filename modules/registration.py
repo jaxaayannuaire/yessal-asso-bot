@@ -364,6 +364,30 @@ async def creer_operateur_command(update, context):
         return
     member_id = _extract_id(member_result)
 
+    if not member_id:
+        client.delete_dolibarr_user(user_id)
+        await update.message.reply_text(
+            "❌ L'adhérent a été créé mais son ID n'a pas pu être déterminé. "
+            "Le compte utilisateur a été supprimé si possible."
+        )
+        return
+
+    ok_link, link_result = client.link_dolibarr_user_to_member(
+        user_id,
+        member_id,
+    )
+
+    if not ok_link:
+        client.delete_dolibarr_member(member_id)
+        client.delete_dolibarr_user(user_id)
+
+        await update.message.reply_text(
+            "❌ Impossible de lier l'utilisateur Dolibarr à son adhérent.\n"
+            "Les objets créés ont été supprimés si les droits API le permettent.\n\n"
+            f"{link_result}"
+        )
+        return
+
     db = DatabaseManager()
     try:
         ensure_schema(db)
