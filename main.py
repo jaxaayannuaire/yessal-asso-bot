@@ -7,7 +7,11 @@ from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandle
 from core.db import DatabaseManager
 from services.dolibarr_api import DolibarrClient
 from modules.contacts import search_contact_command, sync_contacts_command
-from modules.members import search_member_command, sync_members_command
+from modules.members import (
+    members_command,
+    search_member_command,
+    sync_members_command,
+)
 from modules.memberships import sync_memberships_command
 from modules.contributions import sync_contributions_command
 from modules.dashboard import button_callback, dashboard_command
@@ -83,6 +87,7 @@ def build_application():
     app.add_handler(CommandHandler("sync", sync_contacts_command))
     app.add_handler(CommandHandler("contact", search_contact_command))
     app.add_handler(CommandHandler("sync_members", sync_members_command))
+    app.add_handler(CommandHandler("members", members_command))
     app.add_handler(CommandHandler("membre", search_member_command))
     app.add_handler(CommandHandler("sync_memberships", sync_memberships_command))
     app.add_handler(CommandHandler("sync_contributions", sync_contributions_command))
