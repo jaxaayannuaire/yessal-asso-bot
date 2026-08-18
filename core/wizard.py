@@ -285,7 +285,10 @@ class WizardManager:
                 "date_adhesion": "Date d’adhésion",
             }
             for step in definition.steps:
-                label = labels.get(step.key, step.key.replace("_", " ").capitalize())
+                label = labels.get(
+                    step.key,
+                    step.key.replace("_", " ").capitalize(),
+                )
                 buttons.append([
                     InlineKeyboardButton(
                         f"✏️ {label}",
