@@ -2,7 +2,7 @@ import logging
 import os
 
 from dotenv import load_dotenv
-from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler
+from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
 from core.db import DatabaseManager
 from services.dolibarr_api import DolibarrClient
@@ -35,8 +35,12 @@ from modules.telegram_link import (
     generate_link_command,
     link_command,
 )
+from modules.member_wizard import (
+    inscrire_membre_wizard_command,
+    wizard_text_router,
+    wizard_callback_router,
+)
 from modules.registration import (
-    inscrire_membre_command,
     creer_contact_command,
     creer_tiers_command,
     creer_operateur_command,
@@ -97,6 +101,8 @@ def build_application():
     app.add_handler(CommandHandler("sortie", sortie_command))
     app.add_handler(CallbackQueryHandler(button_callback, pattern=r"^action_"))
     app.add_handler(CallbackQueryHandler(cash_callback, pattern=r"^cash_"))
+    app.add_handler(CallbackQueryHandler(wizard_callback_router, pattern=r"^wiz:"))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, wizard_text_router))
     app.add_handler(CommandHandler("report", weekly_report_command))
     app.add_handler(CommandHandler("test_alert", test_alert_command))
 
@@ -113,7 +119,7 @@ def build_application():
 
     app.add_handler(CommandHandler("generer_lien", generate_link_command))
     app.add_handler(CommandHandler("lier", link_command))
-    app.add_handler(CommandHandler("inscrire_membre", inscrire_membre_command))
+    app.add_handler(CommandHandler("inscrire_membre", inscrire_membre_wizard_command))
     app.add_handler(CommandHandler("creer_contact", creer_contact_command))
     app.add_handler(CommandHandler("creer_tiers", creer_tiers_command))
     app.add_handler(CommandHandler("creer_operateur", creer_operateur_command))
