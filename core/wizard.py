@@ -8,12 +8,8 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 Parser = Callable[[str], Any]
-AsyncCallback = Callable[
-    [Update, ContextTypes.DEFAULT_TYPE, dict[str, Any]], Awaitable[None]
-]
-KeyboardFactory = Callable[
-    [dict[str, Any]], Optional[InlineKeyboardMarkup]
-]
+AsyncCallback = Callable[[Update, ContextTypes.DEFAULT_TYPE, dict[str, Any]], Awaitable[None]]
+KeyboardFactory = Callable[[dict[str, Any]], Optional[InlineKeyboardMarkup]]
 SummaryFactory = Callable[[dict[str, Any]], str]
 
 
@@ -49,6 +45,7 @@ class WizardManager:
 
     SESSION_KEY = "_yessal_wizard"
     CALLBACK_PREFIX = "wiz:"
+    CANCEL_WORDS = frozenset({"echap", "esc", "escape", "annuler", "cancel"})
 
     def __init__(self, definitions: dict[str, WizardDefinition]):
         self.definitions = definitions
@@ -95,6 +92,11 @@ class WizardManager:
             return False
 
         text = (update.message.text or "").strip()
+        if text.casefold() in self.CANCEL_WORDS:
+            self.clear(context)
+            await update.message.reply_text("❌ Opération annulée.")
+            return True
+
         step = definition.steps[session.step_index]
 
         if step.required and not text:
@@ -113,7 +115,15 @@ class WizardManager:
             return True
 
         session.data[step.key] = value
-        session.editing = None
+
+        # En mode édition, une saisie valide termine l'édition et revient
+        # immédiatement au récapitulatif. Elle ne doit jamais avancer à l'étape suivante.
+        if session.editing:
+            session.editing = None
+            self._save(context, session)
+            await self._render_summary(update, context, definition, session)
+            return True
+
         session.step_index += 1
         self._save(context, session)
 
@@ -155,9 +165,32 @@ class WizardManager:
 
         if action == "confirm":
             data = dict(session.data)
-            # Clear first so a double-click cannot submit the same session twice.
             self.clear(context)
             await definition.on_confirm(update, context, data)
+            return True
+
+        if action == "prev":
+            if session.step_index <= 0:
+                await query.answer("Vous êtes déjà à la première étape.", show_alert=True)
+                return True
+            session.step_index -= 1
+            session.editing = None
+            self._save(context, session)
+            await self._render_step(update, context, definition, session)
+            return True
+
+        if action == "next":
+            step = definition.steps[session.step_index]
+            if step.required and session.data.get(step.key) in (None, ""):
+                await query.answer("Cette étape doit être renseignée.", show_alert=True)
+                return True
+            session.editing = None
+            session.step_index += 1
+            self._save(context, session)
+            if session.step_index >= len(definition.steps):
+                await self._render_summary(update, context, definition, session)
+            else:
+                await self._render_step(update, context, definition, session)
             return True
 
         if action == "edit" and len(parts) == 3 and definition.allow_edit:
@@ -188,6 +221,9 @@ class WizardManager:
             session.data[key] = value
             if session.editing == key:
                 session.editing = None
+                self._save(context, session)
+                await self._render_summary(update, context, definition, session)
+                return True
 
             if session.step_index == index:
                 session.step_index += 1
@@ -204,11 +240,26 @@ class WizardManager:
         await query.edit_message_text("❌ Action Wizard inconnue.")
         return True
 
+    def _navigation_keyboard(self, session: WizardSession):
+        buttons = []
+        if session.step_index > 0:
+            buttons.append(InlineKeyboardButton("⬅️ Précédent", callback_data=f"{self.CALLBACK_PREFIX}prev"))
+        if session.step_index < len(self.definitions[session.name].steps) - 1:
+            buttons.append(InlineKeyboardButton("➡️ Suivant", callback_data=f"{self.CALLBACK_PREFIX}next"))
+        if not buttons:
+            return None
+        return InlineKeyboardMarkup([buttons])
+
     async def _render_step(self, update, context, definition, session):
         step = definition.steps[session.step_index]
         prefix = f"🧭 {definition.title}\n\n" if definition.title else ""
         text = prefix + step.prompt
         keyboard = step.keyboard(session.data) if step.keyboard else None
+        nav = self._navigation_keyboard(session)
+        if nav:
+            nav_rows = [list(row) for row in (keyboard.inline_keyboard if keyboard else [])]
+            nav_rows.extend(nav.inline_keyboard)
+            keyboard = InlineKeyboardMarkup(nav_rows)
         if update.callback_query:
             await update.callback_query.edit_message_text(
                 text, reply_markup=keyboard, parse_mode="HTML"
@@ -231,14 +282,8 @@ class WizardManager:
                 ])
 
         buttons.append([
-            InlineKeyboardButton(
-                "✅ VALIDER",
-                callback_data=f"{self.CALLBACK_PREFIX}confirm",
-            ),
-            InlineKeyboardButton(
-                "❌ ANNULER",
-                callback_data=f"{self.CALLBACK_PREFIX}cancel",
-            ),
+            InlineKeyboardButton("✅ VALIDER", callback_data=f"{self.CALLBACK_PREFIX}confirm"),
+            InlineKeyboardButton("❌ ANNULER", callback_data=f"{self.CALLBACK_PREFIX}cancel"),
         ])
 
         markup = InlineKeyboardMarkup(buttons)
@@ -259,10 +304,7 @@ def choice_keyboard(key: str, choices: list[tuple[str, str]]) -> KeyboardFactory
     def factory(_data):
         return InlineKeyboardMarkup([
             [
-                InlineKeyboardButton(
-                    label,
-                    callback_data=f"wiz:choose:{key}:{value}",
-                )
+                InlineKeyboardButton(label, callback_data=f"wiz:choose:{key}:{value}")
             ]
             for label, value in choices
         ])

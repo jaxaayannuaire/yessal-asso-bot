@@ -206,6 +206,9 @@ class DolibarrClient:
     def create_dolibarr_member(self, payload):
         return self._post("members", payload)
 
+    def get_dolibarr_member(self, member_id):
+        return self._get(f"members/{int(member_id)}")
+
     def delete_dolibarr_member(self, member_id):
         return self._delete(f"members/{int(member_id)}")
 
