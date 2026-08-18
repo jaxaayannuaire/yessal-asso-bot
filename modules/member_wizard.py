@@ -72,37 +72,64 @@ def _date(value):
     return parsed.strftime("%Y-%m-%d")
 
 
-def _type_keyboard(_data):
+def _type_keyboard(data):
     client = DolibarrClient()
-    ok, data = client.get_dolibarr_member_types()
+    ok, response = client.get_dolibarr_member_types()
+
+    # Conserve les libellés Dolibarr dans la session pour afficher
+    # le nom du type dans le récapitulatif, et pas uniquement son ID.
+    labels = {}
     if not ok:
+        labels[str(DEFAULT_MEMBER_TYPE_ID)] = "Membre Actif"
+        data["_type_labels"] = labels
         return InlineKeyboardMarkup([[
             InlineKeyboardButton(
                 f"👤 Membre Actif ({DEFAULT_MEMBER_TYPE_ID})",
                 callback_data=f"wiz:choose:type_id:{DEFAULT_MEMBER_TYPE_ID}",
             )
         ]])
-    values = data if isinstance(data, list) else (data.get("data", []) if isinstance(data, dict) else [])
+
+    values = (
+        response
+        if isinstance(response, list)
+        else (response.get("data", []) if isinstance(response, dict) else [])
+    )
     buttons = []
+
     for item in values:
         if not isinstance(item, dict):
             continue
+
         iid = item.get("id", item.get("rowid"))
         label = item.get("label", item.get("name", iid))
         status = item.get("statut", item.get("status", 1))
+
         try:
             active = int(status) != 0
         except (TypeError, ValueError):
             active = bool(status)
-        if str(iid).isdigit() and active:
-            buttons.append([InlineKeyboardButton(str(label), callback_data=f"wiz:choose:type_id:{iid}")])
-    if not buttons:
-        buttons = [[InlineKeyboardButton(
-            f"👤 Membre Actif ({DEFAULT_MEMBER_TYPE_ID})",
-            callback_data=f"wiz:choose:type_id:{DEFAULT_MEMBER_TYPE_ID}",
-        )]]
-    return InlineKeyboardMarkup(buttons)
 
+        if str(iid).isdigit() and active:
+            label = str(label)
+            labels[str(iid)] = label
+            buttons.append([
+                InlineKeyboardButton(
+                    label,
+                    callback_data=f"wiz:choose:type_id:{iid}",
+                )
+            ])
+
+    if not buttons:
+        labels[str(DEFAULT_MEMBER_TYPE_ID)] = "Membre Actif"
+        buttons = [[
+            InlineKeyboardButton(
+                f"👤 Membre Actif ({DEFAULT_MEMBER_TYPE_ID})",
+                callback_data=f"wiz:choose:type_id:{DEFAULT_MEMBER_TYPE_ID}",
+            )
+        ]]
+
+    data["_type_labels"] = labels
+    return InlineKeyboardMarkup(buttons)
 
 def _default_date_keyboard(_data):
     today = date.today().strftime("%d/%m/%Y")
@@ -131,6 +158,10 @@ def _summary(data):
     email_default = data.get("email") == DEFAULT_MEMBER_EMAIL
     email_value = data.get("email", "—")
     email_label = f"{email_value} (défaut)" if email_default else email_value
+
+    type_id = str(data.get("type_id", DEFAULT_MEMBER_TYPE_ID))
+    type_label = data.get("_type_labels", {}).get(type_id, "Membre Actif")
+
     values = {
         "lastname": html.escape(str(data.get("lastname", "—"))),
         "firstname": html.escape(str(data.get("firstname", "—"))),
@@ -140,20 +171,22 @@ def _summary(data):
         "email": html.escape(str(email_label)),
         "address": html.escape(str(data.get("address", "—"))),
         "town": html.escape(str(data.get("town", "—"))),
-        "type_id": html.escape(str(data.get("type_id", DEFAULT_MEMBER_TYPE_ID))),
+        "type_id": html.escape(type_id),
+        "type_label": html.escape(str(type_label)),
         "date_adhesion": html.escape(str(data.get("date_adhesion", "—"))),
     }
+
     return (
         "🔎 <b>VÉRIFICATION — NOUVEL ADHÉRENT</b>\n\n"
         f"👤 Nom : <b>{values['lastname']}</b>\n"
         f"👤 Prénom : <b>{values['firstname']}</b>\n"
         f"🚻 Sexe : <b>{values['sex']}</b>\n"
-        f"🧍 Nature : <b>{values['morphy']}</b>\n"
+        f"🧍 Nature de l’adhérent : <b>{values['morphy']}</b>\n"
         f"📱 Téléphone : <b>{values['phone']}</b>\n"
         f"📧 Email : <b>{values['email']}</b>\n"
         f"🏠 Adresse : <b>{values['address']}</b>\n"
         f"📍 Ville : <b>{values['town']}</b>\n"
-        f"🏷 Type d'adhérent : <b>{values['type_id']}</b>\n"
+        f"🏷 Type d'adhérent : <b>{values['type_label']} ({values['type_id']})</b>\n"
         f"📅 Date d'adhésion : <b>{values['date_adhesion']}</b>\n\n"
         "Aucune écriture Dolibarr n'a encore été effectuée.\n"
         "Choisissez une action :"

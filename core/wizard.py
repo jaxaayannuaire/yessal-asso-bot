@@ -272,8 +272,20 @@ class WizardManager:
     async def _render_summary(self, update, context, definition, session):
         buttons = []
         if definition.allow_edit:
+            labels = {
+                "lastname": "Nom",
+                "firstname": "Prénom",
+                "sex": "Sexe",
+                "morphy": "Nature de l’adhérent",
+                "phone": "Téléphone",
+                "email": "Email",
+                "address": "Adresse",
+                "town": "Ville",
+                "type_id": "Type d’adhérent",
+                "date_adhesion": "Date d’adhésion",
+            }
             for step in definition.steps:
-                label = step.key.replace("_", " ").capitalize()
+                label = labels.get(step.key, step.key.replace("_", " ").capitalize())
                 buttons.append([
                     InlineKeyboardButton(
                         f"✏️ {label}",
