@@ -1,6 +1,8 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 from core.auth import AuthManager
+from services.member_search import search_members
+from datetime import datetime, timezone
 
 MEMBER_FILTERS = (
     ("lastname", "Nom"), ("firstname", "Prénom"),
@@ -77,6 +79,7 @@ INTERACTIVE_MEMBER_FILTERS = {
 
 PENDING_FILTER_KEY = "search_pending_filter"
 FILTERS_DATA_KEY = "search_filters"
+SEARCH_RESULTS_KEY = "search_member_results"
 
 
 def _get_member_filters(context):
@@ -111,7 +114,6 @@ async def handle_member_filter_input(update, context):
     key = context.user_data.get(PENDING_FILTER_KEY)
     if key not in INTERACTIVE_MEMBER_FILTERS:
         return False
-
     if not update.message or not update.message.text:
         return False
 
@@ -123,7 +125,6 @@ async def handle_member_filter_input(update, context):
     filters = _get_member_filters(context)
     filters[key] = value
     context.user_data.pop(PENDING_FILTER_KEY, None)
-
     await update.message.reply_text(
         text=build_member_filters_text(filters),
         reply_markup=build_member_filters_keyboard(),
@@ -141,6 +142,75 @@ async def cancel_member_filter_input(update, context):
         parse_mode="Markdown",
     )
     return True
+
+
+def _format_date(value):
+    if not value:
+        return "—"
+    try:
+        if isinstance(value, (int, float)) or (isinstance(value, str) and str(value).isdigit()):
+            dt = datetime.fromtimestamp(int(value), tz=timezone.utc)
+            return dt.strftime("%d/%m/%Y")
+        return str(value)[:10]
+    except (TypeError, ValueError, OverflowError):
+        return str(value)
+
+
+def _member_result_line(member, index):
+    lastname = member.get("lastname") or ""
+    firstname = member.get("firstname") or ""
+    name = f"{lastname} {firstname}".strip() or member.get("name") or "Sans nom"
+    ref = member.get("ref") or "—"
+    phone = member.get("phone") or member.get("phone_mobile") or "—"
+    city = member.get("town") or "—"
+    joined = _format_date(member.get("first_subscription_date") or member.get("date_creation"))
+    options = member.get("array_options") or {}
+    fonction = options.get("options_fonction") or "—"
+    responsabilite = options.get("options_responsabilite") or "—"
+    return (
+        f"*{index}. {name}*\n"
+        f"🔖 {ref} | 📱 {phone}\n"
+        f"📍 {city} | 📅 {joined}\n"
+        f"💼 {fonction} | 🎯 {responsabilite}"
+    )
+
+
+def _build_member_results_text(results):
+    if not results:
+        return (
+            "🔎 *RÉSULTATS ADHÉRENTS*\n\n"
+            "Aucun adhérent ne correspond aux critères."
+        )
+    lines = [
+        "🔎 *RÉSULTATS ADHÉRENTS*",
+        f"👥 {len(results)} résultat(s)",
+        "",
+    ]
+    for index, member in enumerate(results, start=1):
+        lines.extend([_member_result_line(member, index), ""])
+    return "\n".join(lines).rstrip()
+
+
+def _build_member_results_keyboard(results):
+    rows = []
+    for index, member in enumerate(results[:10], start=1):
+        member_id = member.get("id")
+        if member_id not in (None, ""):
+            rows.append([
+                InlineKeyboardButton(
+                    f"👤 Voir {index}",
+                    callback_data=f"search:member:view:{member_id}",
+                )
+            ])
+    rows.append([InlineKeyboardButton("⬅️ Modifier les filtres", callback_data="search:type:members")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _run_member_search(filters):
+    success, data = search_members(filters, limit=1000)
+    if not success:
+        return False, data
+    return True, data if isinstance(data, list) else []
 
 def build_member_filters_keyboard():
     rows = []
@@ -207,9 +277,26 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await prompt_member_filter(update, context, key)
         await query.answer("Ce filtre sera ajouté dans une prochaine étape.", show_alert=True)
         return
+    if data.startswith("search:member:view:"):
+        member_id = data.rsplit(":", 1)[-1]
+        results = context.user_data.get(SEARCH_RESULTS_KEY, [])
+        member = next((item for item in results if str(item.get("id")) == member_id), None)
+        await query.answer()
+        if not member:
+            await query.answer("Résultat introuvable.", show_alert=True)
+            return
+        await query.edit_message_text(
+            text=_member_result_line(member, 1),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬅️ Résultats", callback_data="search:run:member")]
+            ]),
+            parse_mode="Markdown",
+        )
+        return
     if data == "search:reset:member":
         context.user_data[FILTERS_DATA_KEY] = {}
         context.user_data.pop(PENDING_FILTER_KEY, None)
+        context.user_data.pop(SEARCH_RESULTS_KEY, None)
         await query.answer()
         return await recherche_member_filters(update, context)
     if data == "search:run:member":
