@@ -238,7 +238,12 @@ def build_member_filters_text(filters=None):
             ]
     for key, label in MEMBER_FILTERS:
         value = filters.get(key)
-        lines.append(f"• {label} : {value if value not in (None, '') else '—'}")
+        if value in (None, ""):
+            display = "—"
+        else:
+            safe_value = str(value).replace("\\", "\\\\").replace("*", "\\*").replace("_", "\\_").replace("`", "\\`").replace("[", "\\[")
+            display = f"*{safe_value}*"
+        lines.append(f"• {label} : {display}")
     return "\n".join(lines)
 
 
@@ -300,11 +305,31 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer()
         return await recherche_member_filters(update, context)
     if data == "search:run:member":
-        await query.answer()
+        filters = _get_member_filters(context)
+        if not filters:
+            await query.answer("Ajoutez au moins un critère de recherche.", show_alert=True)
+            return
+
+        await query.answer("Recherche en cours…")
+        success, results = _run_member_search(filters)
+
+        if not success:
+            await query.edit_message_text(
+                text=f"❌ *Erreur de recherche*\n\n{results}",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("⬅️ Retour aux filtres", callback_data="search:type:members")]
+                ]),
+                parse_mode="Markdown",
+            )
+            return
+
+        context.user_data[SEARCH_RESULTS_KEY] = results
         await query.edit_message_text(
-            text="🔎 *Résultats Adhérents*\n\nAucun résultat exécuté pour le moment.",
+            text=_build_member_results_text(results),
+            reply_markup=_build_member_results_keyboard(results),
             parse_mode="Markdown",
         )
+        return
 
 
 async def recherche_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
