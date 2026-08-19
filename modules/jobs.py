@@ -1,70 +1,75 @@
+"""Jobs planifiés de Yessal Asso Bot."""
+from __future__ import annotations
+
 import logging
 import os
+import shutil
+from datetime import datetime
+from pathlib import Path
 
 from telegram.ext import ContextTypes
 
 from core.db import DatabaseManager
-from services.dolibarr_api import DolibarrClient
+from services.sync_service import SyncService
 
 logger = logging.getLogger(__name__)
 
 
-async def background_sync_job(context: ContextTypes.DEFAULT_TYPE):
-    """Synchronise automatiquement les contacts et adhérents depuis Dolibarr."""
-    logger.info("Lancement du job de synchronisation automatique")
-    client = DolibarrClient()
-    db = DatabaseManager()
+def _run_profile(profile: str):
+    service = SyncService()
     try:
-        success_contacts, contacts = client.get_contacts()
-        if success_contacts:
-            db.sync_contacts(contacts)
-        else:
-            logger.warning("Sync contacts échouée : %s", contacts)
-
-        success_members, members = client.get_members()
-        if success_members:
-            db.sync_members(members)
-        else:
-            logger.warning("Sync membres échouée : %s", members)
-
-        logger.info("Job de synchronisation automatique terminé")
-    except Exception:
-        logger.exception("Erreur background_sync_job")
+        return service.sync_profile(profile)
     finally:
-        db.close()
+        service.close()
+
+
+async def sync_contacts_members_job(context: ContextTypes.DEFAULT_TYPE):
+    """Synchronisation des contacts et adhérents toutes les 30 minutes."""
+    results = _run_profile("contacts_members")
+    logger.info("Sync contacts/adhérents : %s", results)
+
+
+async def sync_finance_job(context: ContextTypes.DEFAULT_TYPE):
+    """Synchronisation adhésions et cotisations toutes les 15 minutes."""
+    results = _run_profile("finance")
+    logger.info("Sync finance : %s", results)
+
+
+async def background_sync_job(context: ContextTypes.DEFAULT_TYPE):
+    """Synchronisation complète de sécurité, par défaut toutes les heures."""
+    results = _run_profile("full")
+    logger.info("Synchronisation complète : %s", results)
+
+
+async def backup_duckdb_job(context: ContextTypes.DEFAULT_TYPE):
+    """Crée une copie complète quotidienne de DuckDB."""
+    source = Path(os.getenv("DUCKDB_PATH", "./data/yessal_asso.duckdb"))
+    backup_dir = Path(os.getenv("DUCKDB_BACKUP_DIR", "./data/backups"))
+    if not source.exists():
+        logger.warning("Sauvegarde ignorée : DuckDB introuvable : %s", source)
+        return
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    target = backup_dir / f"yessal_asso_{datetime.now():%Y-%m-%d}.duckdb"
+    shutil.copy2(source, target)
+    logger.info("Sauvegarde DuckDB créée : %s", target)
 
 
 async def scheduled_weekly_report(context: ContextTypes.DEFAULT_TYPE):
-    """Envoie le rapport hebdomadaire dans le chat administratif configuré."""
-    chat_id = os.getenv("ADMIN_CHAT_ID") or os.getenv("TELEGRAM_MAIN_GROUP_ID")
+    chat_id = os.getenv("ADMIN_CHAT_ID")
     if not chat_id:
-        logger.warning("ADMIN_CHAT_ID / TELEGRAM_MAIN_GROUP_ID non défini")
+        logger.warning("ADMIN_CHAT_ID non défini")
         return
-
     db = DatabaseManager()
     try:
         success, data = db.get_weekly_report_data()
     finally:
         db.close()
-
     if not success:
-        logger.error("Impossible de générer le rapport hebdomadaire")
         return
-
-    report_text = f"""📊 *RAPPORT HEBDOMADAIRE AUTOMATIQUE - YESSAL ASSO* 📊
-
-👥 *Membres & Adhérents :*
-- Total enregistrés : {data.get('total_members', 0)}
-- Adhérents actifs : {data.get('active_members', 0)}
-
-💰 *Cotisations & Finances :*
-- Nombre de versements : {data.get('total_cotisations_count', 0)}
-- Montant total collecté : *{data.get('total_cotisations_amount', 0):,.0f} FCFA*
-
-_Envoyé automatiquement par Yessal Asso Bot._
-"""
-    try:
-        await context.bot.send_message(chat_id=chat_id, text=report_text, parse_mode="Markdown")
-        logger.info("Rapport hebdomadaire envoyé")
-    except Exception:
-        logger.exception("Erreur lors de l'envoi du rapport hebdomadaire")
+    text = (
+        "📊 *RAPPORT HEBDOMADAIRE AUTOMATIQUE - YESSAL ASSO*\n\n"
+        f"👥 Total adhérents : {data.get('total_members', 0)}\n"
+        f"🟢 Adhérents actifs : {data.get('active_members', 0)}\n"
+        f"💰 Cotisations : {data.get('total_cotisations_amount', 0):,.0f} FCFA"
+    )
+    await context.bot.send_message(chat_id=chat_id, text=text, parse_mode="Markdown")

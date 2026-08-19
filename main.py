@@ -7,15 +7,10 @@ from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandle
 from core.db import DatabaseManager
 from services.dolibarr_api import DolibarrClient
 from modules.contacts import search_contact_command, sync_contacts_command
-from modules.members import (
-    members_command,
-    search_member_command,
-    sync_members_command,
-)
+from modules.members import members_command, search_member_command, sync_members_command
 from modules.memberships import sync_memberships_command
 from modules.contributions import sync_contributions_command
 from modules.dashboard import button_callback, dashboard_command
-from modules.jobs import background_sync_job, scheduled_weekly_report
 from modules.report import test_alert_command, weekly_report_command
 from modules.cash import caisse_command, cash_callback, entree_command, sortie_command
 from modules.roles import (
@@ -31,10 +26,7 @@ from modules.roles import (
     roles_command,
     sync_roles_command,
 )
-from modules.telegram_link import (
-    generate_link_command,
-    link_command,
-)
+from modules.telegram_link import generate_link_command, link_command
 from modules.member_wizard import (
     inscrire_membre_wizard_command,
     wizard_text_router,
@@ -45,12 +37,8 @@ from modules.registration import (
     creer_tiers_command,
     creer_operateur_command,
 )
-from modules.search import (
-    recherche_command,
-    search_callback,
-    handle_member_filter_input,
-    cancel_member_filter_input,
-)
+from modules.search import recherche_command, search_callback
+from modules.scheduler import configure_scheduled_jobs
 
 load_dotenv()
 logging.basicConfig(
@@ -110,22 +98,9 @@ def build_application():
     app.add_handler(CallbackQueryHandler(cash_callback, pattern=r"^cash_"))
     app.add_handler(CallbackQueryHandler(search_callback, pattern=r"^search:"))
     app.add_handler(CallbackQueryHandler(wizard_callback_router, pattern=r"^wiz:"))
-
-    async def search_text_router(update, context):
-        if await handle_member_filter_input(update, context):
-            return
-        await wizard_text_router(update, context)
-
-    async def cancel_search_filter(update, context):
-        if await cancel_member_filter_input(update, context):
-            return
-        await update.message.reply_text("Aucune recherche en cours à annuler.")
-
-    app.add_handler(CommandHandler("annuler", cancel_search_filter))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_text_router))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, wizard_text_router))
     app.add_handler(CommandHandler("report", weekly_report_command))
     app.add_handler(CommandHandler("test_alert", test_alert_command))
-
     app.add_handler(CommandHandler("roles", roles_command))
     app.add_handler(CommandHandler("bootstrap_super_admin", bootstrap_super_admin_command))
     app.add_handler(CommandHandler("sync_roles", sync_roles_command))
@@ -136,7 +111,6 @@ def build_application():
     app.add_handler(CommandHandler("nommer_bureau", nommer_bureau_command))
     app.add_handler(CommandHandler("nommer_admin", nommer_admin_command))
     app.add_handler(CommandHandler("nommer_membre", nommer_membre_command))
-
     app.add_handler(CommandHandler("generer_lien", generate_link_command))
     app.add_handler(CommandHandler("lier", link_command))
     app.add_handler(CommandHandler("inscrire_membre", inscrire_membre_wizard_command))
@@ -144,12 +118,7 @@ def build_application():
     app.add_handler(CommandHandler("creer_tiers", creer_tiers_command))
     app.add_handler(CommandHandler("creer_operateur", creer_operateur_command))
 
-    if app.job_queue:
-        app.job_queue.run_repeating(background_sync_job, interval=21600, first=10)
-        app.job_queue.run_repeating(scheduled_weekly_report, interval=604800, first=30)
-        logger.info("JobQueue configurée : sync et rapport hebdomadaire actifs.")
-    else:
-        logger.warning("JobQueue indisponible : jobs automatiques désactivés.")
+    configure_scheduled_jobs(app)
     return app
 
 
