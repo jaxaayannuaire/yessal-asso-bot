@@ -113,8 +113,17 @@ class DolibarrClient:
             return False, version
         return True, f"✅ Connexion réussie ! (Version : {version})"
 
-    def get_contacts(self, limit=100):
-        return self._get("contacts", {"limit": limit})
+    def get_contacts(self, limit=100, page=None):
+        """Retourne une page de contacts Dolibarr.
+
+        ``page`` est optionnel pour conserver la compatibilité avec les appels
+        existants. La recherche et la synchronisation peuvent ainsi parcourir
+        toutes les pages au lieu de s'arrêter aux 100 premiers contacts.
+        """
+        params = {"limit": int(limit)}
+        if page is not None:
+            params["page"] = int(page)
+        return self._get("contacts", params)
 
     def get_members(self, limit=100):
         success, data = self._get("members", {"limit": limit})
