@@ -45,6 +45,12 @@ from modules.registration import (
     creer_tiers_command,
     creer_operateur_command,
 )
+from modules.search import (
+    recherche_command,
+    search_callback,
+    handle_member_filter_input,
+    cancel_member_filter_input,
+)
 
 load_dotenv()
 logging.basicConfig(
@@ -96,13 +102,27 @@ def build_application():
     app.add_handler(CommandHandler("sync_memberships", sync_memberships_command))
     app.add_handler(CommandHandler("sync_contributions", sync_contributions_command))
     app.add_handler(CommandHandler("dashboard", dashboard_command))
+    app.add_handler(CommandHandler("recherche", recherche_command))
     app.add_handler(CommandHandler("caisse", caisse_command))
     app.add_handler(CommandHandler("entree", entree_command))
     app.add_handler(CommandHandler("sortie", sortie_command))
     app.add_handler(CallbackQueryHandler(button_callback, pattern=r"^action_"))
     app.add_handler(CallbackQueryHandler(cash_callback, pattern=r"^cash_"))
+    app.add_handler(CallbackQueryHandler(search_callback, pattern=r"^search:"))
     app.add_handler(CallbackQueryHandler(wizard_callback_router, pattern=r"^wiz:"))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, wizard_text_router))
+
+    async def search_text_router(update, context):
+        if await handle_member_filter_input(update, context):
+            return
+        await wizard_text_router(update, context)
+
+    async def cancel_search_filter(update, context):
+        if await cancel_member_filter_input(update, context):
+            return
+        await update.message.reply_text("Aucune recherche en cours à annuler.")
+
+    app.add_handler(CommandHandler("annuler", cancel_search_filter))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_text_router))
     app.add_handler(CommandHandler("report", weekly_report_command))
     app.add_handler(CommandHandler("test_alert", test_alert_command))
 
