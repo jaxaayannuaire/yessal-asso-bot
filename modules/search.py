@@ -160,19 +160,27 @@ def _member_result_line(member, index):
     lastname = member.get("lastname") or ""
     firstname = member.get("firstname") or ""
     name = f"{lastname} {firstname}".strip() or member.get("name") or "Sans nom"
-    ref = member.get("ref") or "—"
-    phone = member.get("phone") or member.get("phone_mobile") or "—"
-    city = member.get("town") or "—"
-    joined = _format_date(member.get("first_subscription_date") or member.get("date_creation"))
+
     options = member.get("array_options") or {}
-    fonction = options.get("options_fonction") or "—"
-    responsabilite = options.get("options_responsabilite") or "—"
-    return (
-        f"*{index}. {name}*\n"
-        f"🔖 {ref} | 📱 {phone}\n"
-        f"📍 {city} | 📅 {joined}\n"
-        f"💼 {fonction} | 🎯 {responsabilite}"
-    )
+    fields = []
+
+    def add(icon, value):
+        if value not in (None, "", "—"):
+            fields.append(f"{icon} {value}")
+
+    add("🪪", member.get("ref"))
+    add("📱", member.get("phone") or member.get("phone_mobile") or member.get("phone_perso"))
+    add("📍", member.get("address"))
+    add("🏙️", member.get("town"))
+    add("📅", _format_date(member.get("first_subscription_date") or member.get("date_creation")))
+    add("👥", member.get("type"))
+    add("💼", options.get("options_fonction"))
+    add("🎯", options.get("options_responsabilite"))
+
+    lines = [f"*{index}. {name}*"]
+    if fields:
+        lines.append("  |  ".join(fields))
+    return "\n".join(lines)
 
 
 def _build_member_results_text(results):
@@ -187,7 +195,9 @@ def _build_member_results_text(results):
         "",
     ]
     for index, member in enumerate(results, start=1):
-        lines.extend([_member_result_line(member, index), ""])
+        if index > 1:
+            lines.extend(["", "--------------------", ""])
+        lines.append(_member_result_line(member, index))
     return "\n".join(lines).rstrip()
 
 
