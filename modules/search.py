@@ -2,6 +2,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 from core.auth import AuthManager
 from services.member_search import search_members
+from core.header import send_page_header
 from datetime import datetime, timezone
 
 MEMBER_FILTERS = (
@@ -156,30 +157,75 @@ def _format_date(value):
         return str(value)
 
 
-def _member_result_line(member, index):
-    lastname = member.get("lastname") or ""
+def _membership_duration_text(value):
+    if not value:
+        return None
+
+    try:
+        if isinstance(value, (int, float)) or (isinstance(value, str) and str(value).isdigit()):
+            start_date = datetime.fromtimestamp(int(value), tz=timezone.utc).date()
+        else:
+            start_date = datetime.fromisoformat(str(value)[:10]).date()
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+    today = datetime.now(timezone.utc).date()
+    months = (today.year - start_date.year) * 12 + today.month - start_date.month
+    if today.day < start_date.day:
+        months -= 1
+    months = max(0, months)
+
+    years, remaining_months = divmod(months, 12)
+    parts = []
+    if years:
+        parts.append(f"{years} an" + ("" if years == 1 else "s"))
+    if remaining_months:
+        parts.append(f"{remaining_months} mois")
+    if not parts:
+        return "membre depuis moins d’un mois"
+    return "membre depuis " + " ".join(parts)
+
+
+def _member_display_name(member):
     firstname = member.get("firstname") or ""
-    name = f"{lastname} {firstname}".strip() or member.get("name") or "Sans nom"
+    lastname = member.get("lastname") or ""
+    name = f"{firstname} {lastname}".strip()
+    return name or member.get("name") or "Sans nom"
 
+
+def _member_membership_date(member):
+    return (
+        member.get("first_subscription_date")
+        or member.get("first_subscription_date_start")
+        or member.get("date_creation")
+    )
+
+
+def _member_result_line(member, index):
+    name = _member_display_name(member)
     options = member.get("array_options") or {}
-    fields = []
-
-    def add(icon, value):
-        if value not in (None, "", "—"):
-            fields.append(f"{icon} {value}")
-
-    add("🪪", member.get("ref"))
-    add("📱", member.get("phone") or member.get("phone_mobile") or member.get("phone_perso"))
-    add("📍", member.get("address"))
-    add("🏙️", member.get("town"))
-    add("📅", _format_date(member.get("first_subscription_date") or member.get("date_creation")))
-    add("👥", member.get("type"))
-    add("💼", options.get("options_fonction"))
-    add("🎯", options.get("options_responsabilite"))
-
+    membership_date = _member_membership_date(member)
     lines = [f"*{index}. {name}*"]
-    if fields:
-        lines.append("  |  ".join(fields))
+
+    def add(icon, label, value):
+        if value not in (None, "", "—"):
+            lines.append(f"{icon} {label} : {value}")
+
+    add("🪪", "Référence", member.get("ref"))
+    add("📱", "Téléphone", member.get("phone") or member.get("phone_mobile") or member.get("phone_perso"))
+    add("📍", "Adresse", member.get("address"))
+    add("🏙️", "Ville", member.get("town"))
+
+    if membership_date:
+        date_text = _format_date(membership_date)
+        duration_text = _membership_duration_text(membership_date)
+        if duration_text:
+            date_text = f"{date_text} ({duration_text})"
+        add("📅", "Date d’adhésion", date_text)
+
+    add("👥", "Type d’adhérent", member.get("type"))
+    add("💼", "Fonction", options.get("options_fonction"))
+    add("🎯", "Responsabilité", options.get("options_responsabilite"))
     return "\n".join(lines)
 
 
@@ -196,7 +242,7 @@ def _build_member_results_text(results):
     ]
     for index, member in enumerate(results, start=1):
         if index > 1:
-            lines.extend(["", "--------------------", ""])
+            lines.extend(["", "------------------------------------------------------------", ""])
         lines.append(_member_result_line(member, index))
     return "\n".join(lines).rstrip()
 
@@ -208,7 +254,7 @@ def _build_member_results_keyboard(results):
         if member_id not in (None, ""):
             rows.append([
                 InlineKeyboardButton(
-                    f"👤 Voir {index}",
+                    f"👁️ Voir en détails ({index} - {_member_display_name(member)})",
                     callback_data=f"search:member:view:{member_id}",
                 )
             ])
@@ -301,7 +347,10 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("Résultat introuvable.", show_alert=True)
             return
         await query.edit_message_text(
-            text=_member_result_line(member, 1),
+            text=(
+                "👤 *DÉTAIL ADHÉRENT*\n\n"
+                + _member_result_line(member, 1)
+            ),
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("⬅️ Résultats", callback_data="search:run:member")]
             ]),
@@ -349,6 +398,11 @@ async def recherche_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⛔ Accès refusé à la recherche.")
         return
     stats = _get_search_stats()
+    await send_page_header(
+        update,
+        context,
+        title="RECHERCHE YESSAL ASSO",
+    )
     await update.message.reply_text(
         text=_build_search_text(stats),
         reply_markup=_build_keyboard(stats),

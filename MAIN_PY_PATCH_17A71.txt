@@ -1,0 +1,42 @@
+# MAIN_PY_PATCH_17A71
+
+Ajouter les imports :
+
+from telegram.ext import MessageHandler, filters
+
+from modules.member_wizard import (
+    inscrire_membre_wizard_command,
+    wizard_callback_router,
+    wizard_text_router,
+)
+
+Puis remplacer l'ancien handler :
+
+app.add_handler(CommandHandler("inscrire_membre", inscrire_membre_command))
+
+par :
+
+app.add_handler(
+    CommandHandler("inscrire_membre", inscrire_membre_wizard_command)
+)
+
+Ajouter les handlers Wizard dans build_application(), AVANT les handlers
+génériques susceptibles de traiter les mêmes messages :
+
+app.add_handler(
+    CallbackQueryHandler(wizard_callback_router, pattern=r"^wiz:")
+)
+
+app.add_handler(
+    MessageHandler(filters.TEXT & ~filters.COMMAND, wizard_text_router)
+)
+
+IMPORTANT :
+- conserver l'ancien import `inscrire_membre_command` tant que la migration
+  n'est pas validée, puis le retirer ;
+- le Wizard ne crée rien dans Dolibarr pendant les étapes ;
+- seul le bouton `wiz:confirm` appelle `_on_confirm()` ;
+- `X` pour l'email devient `DEFAULT_MEMBER_EMAIL` ;
+- le type par défaut vient de `DEFAULT_MEMBER_TYPE_ID` ;
+- le téléphone est obligatoire ;
+- la nature envoyée à Dolibarr est `morphy=mor` (personne physique).

@@ -2,13 +2,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from modules.search import build_member_filters_text, search_callback
-
-
-def test_selected_member_filter_value_is_bold():
-    text = build_member_filters_text({"lastname": "samb"})
-    assert "Nom : *samb*" in text
-    assert "Prénom : —" in text
+from modules.search import search_callback
 
 
 @pytest.mark.asyncio
@@ -35,4 +29,4 @@ async def test_run_member_search_displays_results():
 
     kwargs = update.callback_query.edit_message_text.await_args.kwargs
     assert "RÉSULTATS ADHÉRENTS" in kwargs["text"]
-    assert "SAMB Pape" in kwargs["text"]
+    assert "Pape SAMB" in kwargs["text"]

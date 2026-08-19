@@ -1,0 +1,33 @@
+# MAIN_PY_PATCH_17AW_WIZARD_ENGINE
+
+Le moteur Wizard est ajouté sans remplacer immédiatement les commandes
+existantes.
+
+1. Importer dans main.py :
+
+from telegram.ext import MessageHandler, filters
+from core.wizard import WizardManager
+
+2. Enregistrer un routeur texte :
+
+app.add_handler(
+    MessageHandler(filters.TEXT & ~filters.COMMAND, wizard_text_router)
+)
+
+3. Enregistrer un routeur de boutons :
+
+app.add_handler(
+    CallbackQueryHandler(wizard_callback_router, pattern=r"^wiz:")
+)
+
+Les routeurs appelleront respectivement :
+    wizard_manager.handle_text(update, context)
+    wizard_manager.handle_callback(update, context)
+
+IMPORTANT :
+- placer ces handlers avant les handlers génériques concernés ;
+- conserver les commandes existantes pendant cette étape ;
+- le moteur Wizard ne fait aucune écriture Dolibarr ;
+- seul le callback métier on_confirm doit déclencher l'écriture après
+  validation explicite ;
+- la prochaine étape branchera le Wizard d'inscription membre.
