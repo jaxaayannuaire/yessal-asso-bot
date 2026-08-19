@@ -2,6 +2,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 from core.auth import AuthManager
 from services.member_search import search_members
+from services.contact_search import search_contacts
 from core.header import send_page_header
 from datetime import datetime, timezone
 
@@ -78,9 +79,25 @@ INTERACTIVE_MEMBER_FILTERS = {
     "lastname", "firstname", "ref", "phone", "phone_mobile",
 }
 
+CONTACT_FILTERS = (
+    ("lastname", "Nom"), ("firstname", "Prénom"),
+    ("societe", "Société / organisation"), ("phone", "Téléphone"),
+    ("phone_mobile", "WhatsApp"), ("email", "Email"),
+    ("address", "Adresse"), ("zip", "Code postal"),
+    ("town", "Ville"), ("poste", "Fonction"),
+)
+
+INTERACTIVE_CONTACT_FILTERS = {
+    "lastname", "firstname", "societe", "phone", "phone_mobile",
+    "email", "address", "zip", "town", "poste",
+}
+
 PENDING_FILTER_KEY = "search_pending_filter"
 FILTERS_DATA_KEY = "search_filters"
 SEARCH_RESULTS_KEY = "search_member_results"
+CONTACT_PENDING_FILTER_KEY = "search_contact_pending_filter"
+CONTACT_FILTERS_DATA_KEY = "search_contact_filters"
+CONTACT_RESULTS_KEY = "search_contact_results"
 
 
 def _get_member_filters(context):
@@ -216,6 +233,8 @@ def _member_result_line(member, index):
     add("📍", "Adresse", member.get("address"))
     add("🏙️", "Ville", member.get("town"))
 
+    add("👥", "Type d’adhérent", member.get("type"))
+
     if membership_date:
         date_text = _format_date(membership_date)
         duration_text = _membership_duration_text(membership_date)
@@ -223,7 +242,6 @@ def _member_result_line(member, index):
             date_text = f"{date_text} ({duration_text})"
         add("📅", "Date d’adhésion", date_text)
 
-    add("👥", "Type d’adhérent", member.get("type"))
     add("💼", "Fonction", options.get("options_fonction"))
     add("🎯", "Responsabilité", options.get("options_responsabilite"))
     return "\n".join(lines)
@@ -314,11 +332,192 @@ async def recherche_member_filters(update, context):
     )
 
 
+def _get_contact_filters(context):
+    data = context.user_data.get(CONTACT_FILTERS_DATA_KEY)
+    if isinstance(data, dict):
+        return data
+    filters = {}
+    context.user_data[CONTACT_FILTERS_DATA_KEY] = filters
+    return filters
+
+
+def _contact_filter_label(key):
+    return dict(CONTACT_FILTERS).get(key, key)
+
+
+def _contact_display_name(contact):
+    firstname = contact.get("firstname") or ""
+    lastname = contact.get("lastname") or ""
+    name = f"{firstname} {lastname}".strip()
+    return name or contact.get("name") or contact.get("societe") or "Sans nom"
+
+
+def _contact_result_line(contact, index):
+    lines = [f"*{index}. {_contact_display_name(contact)}*"]
+
+    def add(icon, label, value):
+        if value not in (None, "", "—"):
+            lines.append(f"{icon} {label} : {value}")
+
+    add("🏢", "Société / organisation", contact.get("societe") or contact.get("company"))
+    add("💼", "Fonction", contact.get("poste"))
+    add("🪪", "Référence", contact.get("ref"))
+    add("📱", "Téléphone", contact.get("phone") or contact.get("phone_pro"))
+    add("💬", "WhatsApp", contact.get("phone_mobile") or contact.get("phone_perso"))
+    add("✉️", "Email", contact.get("email"))
+    add("📍", "Adresse", contact.get("address"))
+    add("📮", "Code postal", contact.get("zip"))
+    add("🏙️", "Ville", contact.get("town"))
+    return "\n".join(lines)
+
+
+def _build_contact_results_text(results):
+    if not results:
+        return (
+            "📇 *RÉSULTATS CONTACTS*\n\n"
+            "Aucun contact ne correspond aux critères."
+        )
+    lines = [
+        "📇 *RÉSULTATS CONTACTS*",
+        f"👥 {len(results)} résultat(s)",
+        "",
+    ]
+    for index, contact in enumerate(results, start=1):
+        if index > 1:
+            lines.extend(["", "------------------------------------------------------------", ""])
+        lines.append(_contact_result_line(contact, index))
+    return "\n".join(lines).rstrip()
+
+
+def _build_contact_results_keyboard(results):
+    rows = []
+    for index, contact in enumerate(results[:10], start=1):
+        contact_id = contact.get("id")
+        if contact_id not in (None, ""):
+            rows.append([
+                InlineKeyboardButton(
+                    f"👁️ Voir en détails ({index} - {_contact_display_name(contact)})",
+                    callback_data=f"search:contact:view:{contact_id}",
+                )
+            ])
+    rows.append([InlineKeyboardButton("⬅️ Modifier les filtres", callback_data="search:type:contacts")])
+    return InlineKeyboardMarkup(rows)
+
+
+def build_contact_filters_keyboard():
+    rows = []
+    for i in range(0, len(CONTACT_FILTERS), 2):
+        rows.append([
+            InlineKeyboardButton(label, callback_data=f"search:filter:contact:{key}")
+            for key, label in CONTACT_FILTERS[i:i + 2]
+        ])
+    rows.append([
+        InlineKeyboardButton("🔎 Rechercher", callback_data="search:run:contact"),
+        InlineKeyboardButton("🧹 Réinitialiser", callback_data="search:reset:contact"),
+    ])
+    rows.append([InlineKeyboardButton("⬅️ Retour", callback_data="search:home")])
+    return InlineKeyboardMarkup(rows)
+
+
+def build_contact_filters_text(filters=None):
+    filters = filters or {}
+    lines = [
+        "📇 *RECHERCHE CONTACT*",
+        "",
+        "Sélectionnez les critères à renseigner :",
+        "",
+    ]
+    for key, label in CONTACT_FILTERS:
+        value = filters.get(key)
+        if value in (None, ""):
+            display = "—"
+        else:
+            safe_value = (
+                str(value)
+                .replace("\\", "\\\\")
+                .replace("*", "\\*")
+                .replace("_", "\\_")
+                .replace("`", "\\`")
+                .replace("[", "\\[")
+            )
+            display = f"*{safe_value}*"
+        lines.append(f"• {label} : {display}")
+    return "\n".join(lines)
+
+
+async def recherche_contact_filters(update, context):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(
+        text=build_contact_filters_text(_get_contact_filters(context)),
+        reply_markup=build_contact_filters_keyboard(),
+        parse_mode="Markdown",
+    )
+
+
+async def prompt_contact_filter(update, context, key):
+    query = update.callback_query
+    await query.answer()
+    context.user_data[CONTACT_PENDING_FILTER_KEY] = key
+    await query.edit_message_text(
+        text=(
+            f"✏️ *{_contact_filter_label(key)}*\n\n"
+            "Envoyez maintenant la valeur recherchée.\n"
+            "Exemple : `Diop`\n\n"
+            "Envoyez `/annuler` pour abandonner."
+        ),
+        parse_mode="Markdown",
+    )
+
+
+async def handle_contact_filter_input(update, context):
+    key = context.user_data.get(CONTACT_PENDING_FILTER_KEY)
+    if key not in INTERACTIVE_CONTACT_FILTERS:
+        return False
+    if not update.message or not update.message.text:
+        return False
+
+    value = update.message.text.strip()
+    if not value:
+        await update.message.reply_text("⚠️ Valeur vide. Réessayez.")
+        return True
+
+    filters = _get_contact_filters(context)
+    filters[key] = value
+    context.user_data.pop(CONTACT_PENDING_FILTER_KEY, None)
+    await update.message.reply_text(
+        text=build_contact_filters_text(filters),
+        reply_markup=build_contact_filters_keyboard(),
+        parse_mode="Markdown",
+    )
+    return True
+
+
+async def cancel_contact_filter_input(update, context):
+    if context.user_data.pop(CONTACT_PENDING_FILTER_KEY, None) is None:
+        return False
+    await update.message.reply_text(
+        text=build_contact_filters_text(_get_contact_filters(context)),
+        reply_markup=build_contact_filters_keyboard(),
+        parse_mode="Markdown",
+    )
+    return True
+
+
+def _run_contact_search(filters):
+    success, data = search_contacts(filters, limit=1000)
+    if not success:
+        return False, data
+    return True, data if isinstance(data, list) else []
+
+
 async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data or ""
     if data == "search:type:members":
         return await recherche_member_filters(update, context)
+    if data == "search:type:contacts":
+        return await recherche_contact_filters(update, context)
     if data == "search:home":
         await query.answer()
         stats = _get_search_stats()
@@ -331,6 +530,57 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "search:close":
         await query.answer()
         await query.edit_message_text(text="🔎 Recherche fermée.")
+        return
+    if data.startswith("search:filter:contact:"):
+        key = data.rsplit(":", 1)[-1]
+        if key in INTERACTIVE_CONTACT_FILTERS:
+            return await prompt_contact_filter(update, context, key)
+        await query.answer("Ce filtre est indisponible.", show_alert=True)
+        return
+    if data.startswith("search:contact:view:"):
+        contact_id = data.rsplit(":", 1)[-1]
+        results = context.user_data.get(CONTACT_RESULTS_KEY, [])
+        contact = next((item for item in results if str(item.get("id")) == contact_id), None)
+        await query.answer()
+        if not contact:
+            await query.answer("Résultat introuvable.", show_alert=True)
+            return
+        await query.edit_message_text(
+            text="📇 *DÉTAIL CONTACT*\n\n" + _contact_result_line(contact, 1),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬅️ Résultats", callback_data="search:run:contact")]
+            ]),
+            parse_mode="Markdown",
+        )
+        return
+    if data == "search:reset:contact":
+        context.user_data[CONTACT_FILTERS_DATA_KEY] = {}
+        context.user_data.pop(CONTACT_PENDING_FILTER_KEY, None)
+        context.user_data.pop(CONTACT_RESULTS_KEY, None)
+        await query.answer()
+        return await recherche_contact_filters(update, context)
+    if data == "search:run:contact":
+        filters = _get_contact_filters(context)
+        if not filters:
+            await query.answer("Ajoutez au moins un critère de recherche.", show_alert=True)
+            return
+        await query.answer("Recherche en cours…")
+        success, results = _run_contact_search(filters)
+        if not success:
+            await query.edit_message_text(
+                text=f"❌ *Erreur de recherche*\n\n{results}",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("⬅️ Retour aux filtres", callback_data="search:type:contacts")]
+                ]),
+                parse_mode="Markdown",
+            )
+            return
+        context.user_data[CONTACT_RESULTS_KEY] = results
+        await query.edit_message_text(
+            text=_build_contact_results_text(results),
+            reply_markup=_build_contact_results_keyboard(results),
+            parse_mode="Markdown",
+        )
         return
     if data.startswith("search:filter:member:"):
         key = data.rsplit(":", 1)[-1]
