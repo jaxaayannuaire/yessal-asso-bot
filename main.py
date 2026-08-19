@@ -38,6 +38,7 @@ from modules.registration import (
     creer_operateur_command,
 )
 from modules.search import recherche_command, search_callback
+from modules.message_router import message_text_router
 from modules.scheduler import configure_scheduled_jobs
 
 load_dotenv()
@@ -98,7 +99,7 @@ def build_application():
     app.add_handler(CallbackQueryHandler(cash_callback, pattern=r"^cash_"))
     app.add_handler(CallbackQueryHandler(search_callback, pattern=r"^search:"))
     app.add_handler(CallbackQueryHandler(wizard_callback_router, pattern=r"^wiz:"))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, wizard_text_router))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_text_router))
     app.add_handler(CommandHandler("report", weekly_report_command))
     app.add_handler(CommandHandler("test_alert", test_alert_command))
     app.add_handler(CommandHandler("roles", roles_command))
