@@ -27,25 +27,28 @@ def test_contact_summary_has_maximum_five_lines_and_id():
     assert "💬 WhatsApp : 769035690" in text
     assert "✉️ Email : arame@example.com" in text
     assert "Dakar" not in text
+    assert "Référence" not in text
 
 
-def test_contact_results_separator_has_no_blank_lines():
+def test_contact_results_separator_and_spacing():
     results = [
         {"id": 1, "firstname": "Awa", "lastname": "DIOP", "poste": "Social"},
         {"id": 2, "firstname": "Fatou", "lastname": "DIOP", "poste": "Finance"},
     ]
     text = build_contact_results_text(results)
+    assert "👥 2 résultat(s)\n\n*1. Awa DIOP* (ID : 1)" in text
     assert "*1. Awa DIOP* (ID : 1)\n💼 Fonction : Social" in text
     assert f"💼 Fonction : Social\n{SEPARATOR}\n*2. Fatou DIOP* (ID : 2)" in text
     assert f"\n\n{SEPARATOR}\n" not in text
     assert f"\n{SEPARATOR}\n\n" not in text
 
 
-def test_contact_detail_shows_non_empty_standard_and_extrafields():
+def test_contact_detail_shows_non_empty_standard_and_extrafields_without_reference():
     contact = {
         "id": 113,
         "firstname": "Arame",
         "lastname": "DIOP",
+        "ref": "REF-113",
         "poste": "Social",
         "phone_mobile": "769035690",
         "email": "",
@@ -62,6 +65,8 @@ def test_contact_detail_shows_non_empty_standard_and_extrafields():
     assert "💬 WhatsApp : 769035690" in text
     assert "Responsabilite : Coordination" in text
     assert "Region : Dakar" in text
+    assert "Référence" not in text
+    assert "REF-113" not in text
     assert "Email" not in text
     assert "Ville" not in text
     assert "Vide" not in text
