@@ -37,7 +37,8 @@ from modules.registration import (
     creer_tiers_command,
     creer_operateur_command,
 )
-from modules.search import recherche_command, search_callback
+from modules.search import recherche_command
+from modules.search_router import search_callback
 from modules.message_router import message_text_router
 from modules.scheduler import configure_scheduled_jobs
 
